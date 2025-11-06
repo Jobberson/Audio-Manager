@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: f9db860c3b5cd9440b4915ef61f6070b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 180613
+  packageName: Tiny AudioManager v1.0
+  packageVersion: 1.0
+  assetPath: Assets/ZombiSoft/TinyAudioManager/AudioManager.cs
+  uploadId: 395535

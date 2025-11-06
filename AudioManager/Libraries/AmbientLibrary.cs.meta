@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 17e03573f0eebd54bb31f13eea8b138e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 180613
+  packageName: Tiny AudioManager v1.0
+  packageVersion: 1.0
+  assetPath: Assets/ZombiSoft/TinyAudioManager/AmbientLibrary.cs
+  uploadId: 395535
