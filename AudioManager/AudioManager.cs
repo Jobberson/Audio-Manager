@@ -84,9 +84,9 @@ namespace Snog.Audio
 			if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
 			if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
 
-			if (soundLibrary == null) Debug.LogWarning("SoundLibrary component missing on this GameObject.", this);
-			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.", this);
-			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.", this);
+			if (soundLibrary == null) Debug.LogWarning("SoundLibrary component missing on this GameObject.");
+			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.");
+			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.");
 
 			AutoAssignMixerAndGroups();
 
@@ -122,13 +122,13 @@ namespace Snog.Audio
 					if (mixer != null)
 					{
 						mainMixer = mixer;
-						Debug.Log($"Auto-assigned mainMixer: {mixer.name}", this);
+						Debug.Log($"Auto-assigned mainMixer: {mixer.name}");
 					}
 				}
 			}
 			catch (System.Exception ex)
 			{
-				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}", this);
+				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}");
 			}
 #endif
 			if (mainMixer != null)
@@ -137,7 +137,7 @@ namespace Snog.Audio
 			}
 			else
 			{
-				Debug.LogWarning("No AudioMixer assigned and none found automatically. Assign mainMixer manually in inspector or place a mixer asset in the project.", this);
+				Debug.LogWarning("No AudioMixer assigned and none found automatically. Assign mainMixer manually in inspector or place a mixer asset in the project.");
 			}
 		}
 
@@ -167,7 +167,7 @@ namespace Snog.Audio
 					if (found != null && found.Length > 0)
 					{
 						groupRef = found[0];
-						Debug.Log($"Auto-assigned group '{groupRef.name}' for candidate '{name}'.", this);
+						Debug.Log($"Auto-assigned group '{groupRef.name}' for candidate '{name}'.");
 						return;
 					}
 				}
@@ -181,7 +181,7 @@ namespace Snog.Audio
 				if (master != null && master.Length > 0)
 				{
 					groupRef = master[0];
-					Debug.Log($"Fallback assigned group '{groupRef.name}'.", this);
+					Debug.Log($"Fallback assigned group '{groupRef.name}'.");
 				}
 			}
 			catch { }
@@ -201,7 +201,7 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning("Cannot SetVolume: mainMixer is not assigned.", this);
+				Debug.LogWarning("Cannot SetVolume: mainMixer is not assigned.");
 				return;
 			}
 
@@ -232,7 +232,7 @@ namespace Snog.Audio
 			var clip = musicLibrary.GetClipFromName(musicName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
+				Debug.LogWarning($"Music clip '{musicName}' not found.");
 				return;
 			}
 			if (musicSource == null) return;
@@ -252,7 +252,7 @@ namespace Snog.Audio
 			var clip = musicLibrary.GetClipFromName(musicName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
+				Debug.LogWarning($"Music clip '{musicName}' not found.");
 				yield break;
 			}
 			musicSource.clip = clip;
@@ -301,7 +301,7 @@ namespace Snog.Audio
 			var clip = ambientLibrary.GetClipFromName(ambientName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
+				Debug.LogWarning($"ambient clip '{ambientName}' not found.");
 				return;
 			}
 			if (ambientSource == null) return;
@@ -320,7 +320,7 @@ namespace Snog.Audio
 			var clip = ambientLibrary.GetClipFromName(ambientName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
+				Debug.LogWarning($"ambient clip '{ambientName}' not found.");
 				yield break;
 			}
 			ambientSource.clip = clip;
@@ -397,7 +397,7 @@ namespace Snog.Audio
 			var clip = soundLibrary.GetClipFromName(soundName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
+				Debug.LogWarning($"Sound clip '{soundName}' not found.");
 				return;
 			}
 			if (fxSource == null) return;
@@ -409,12 +409,12 @@ namespace Snog.Audio
 			var clip = soundLibrary.GetClipFromName(soundName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
+				Debug.LogWarning($"Sound clip '{soundName}' not found.");
 				return;
 			}
 			if (fxPool == null)
 			{
-				Debug.LogWarning("FX Pool not initialized.", this);
+				Debug.LogWarning("FX Pool not initialized.");
 				return;
 			}
 			fxPool.PlayClip(clip, soundPosition, fxVolume * masterVolume);
@@ -467,7 +467,7 @@ namespace Snog.Audio
 					if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
 					break;
 				default:
-					Debug.LogWarning($"Snapshot '{snapshot}' not found.", this);
+					Debug.LogWarning($"Snapshot '{snapshot}' not found.");
 					break;
 			}
 		}
@@ -552,12 +552,12 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.", this);
+				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.");
 				return;
 			}
 			if (!mainMixer.SetFloat(parameterName, value))
 			{
-				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
+				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.");
 			}
 		}
 
@@ -565,13 +565,13 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.", this);
+				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.");
 				return -1f;
 			}
 			if (mainMixer.GetFloat(parameterName, out float value))
 				return value;
 
-			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
+			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.");
 			return -1f;
 		}
 
