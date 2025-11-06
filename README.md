@@ -65,10 +65,45 @@ AudioManager.Instance.PlayMusic("MusicExample");
 ```
 
 ### Here's a list of all methods
-#### Music:
-
+#### **Music:**
+Normal:
 ```csharp 
 PlayMusic(string musicName, float delay)
+StopMusic()
+```
+
+Coroutines:
+```csharp
+PlayMusicFade(string musicName, float duration)
+StopMusicFade(float duration)
+```
+
+#### **Ambient:**
+Normal:
+```csharp 
+PlayAmbient(string ambientName, float delay)
+StopAmbient()
+```
+
+Coroutines:
+```csharp
+PlayAmbientFade(string ambientName, float duration)
+StopAmbientFade(float duration)
+CrossfadeAmbient(string newClipName, float duration)
+```
+
+#### **SFX:**
+Normal:
+```csharp 
+PlaySound2D(string soundName)
+PlaySound3D(string soundName, Vector3 soundPosition)
+```
+
+#### **Misc.:**
+Normal:
+```csharp 
+SetVolume(float volumePercent, AudioChannel channel)
+TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
 ```
 
 ---
