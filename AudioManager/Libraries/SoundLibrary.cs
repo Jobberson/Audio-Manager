@@ -20,7 +20,7 @@ namespace Snog.Audio.Libraries
 
     public class SoundLibrary : MonoBehaviour
     {
-        [Header("ScriptableObject sound data (recommended)")]
+        [Header("Sound Data")]
         public SoundClipData[] scriptableSounds;
 
         [Header("Inline sound data (quick edit)")]
@@ -31,7 +31,7 @@ namespace Snog.Audio.Libraries
 
         private void Awake()
         {
-            BuildDictionary(); // normal runtime build
+            BuildDictionary(); 
         }
 
         /// <summary>
@@ -59,9 +59,7 @@ namespace Snog.Audio.Libraries
                 }
             }
             catch
-            {
-                // don't crash editor on unexpected internal differences
-            }
+            { }
 #endif
 
             built = true;
@@ -114,7 +112,7 @@ namespace Snog.Audio.Libraries
         }
 
 #if UNITY_EDITOR
-        [ContextMenu("Rebuild Sound Dictionary (Editor)")]
+        [ContextMenu("Rebuild Sound Dictionary")]
         public void Editor_RebuildDictionary()
         {
             built = false;

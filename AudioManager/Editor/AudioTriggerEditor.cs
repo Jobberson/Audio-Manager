@@ -46,18 +46,14 @@ public class AudioTriggerEditor : Editor
     {
         serializedObject.Update();
 
-        // Audio Type
         EditorGUILayout.PropertyField(serializedObject.FindProperty("selectedAudioType"));
 
-        // Refresh audio list based on type
         RefreshAudioOptions();
         selectedIndex = EditorGUILayout.Popup("Audio", selectedIndex, audioOptions);
         trigger.audio = audioOptions[selectedIndex];
 
-        // Delay
         EditorGUILayout.PropertyField(serializedObject.FindProperty("playDelay"));
 
-        // Fade options only for Ambient and Music
         if (trigger.selectedAudioType == AudioType.Music || trigger.selectedAudioType == AudioType.Ambient)
         {
             EditorGUILayout.PropertyField(serializedObject.FindProperty("playWithFade"));

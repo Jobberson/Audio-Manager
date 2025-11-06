@@ -12,7 +12,7 @@ namespace Snog.Audio.Libraries
 {
     public class AmbientLibrary : MonoBehaviour
     {
-        [Header("Ambient Clips (ScriptableObjects preferred)")]
+        [Header("Ambient Clips")]
         public AmbientTrack[] ambientClips;
 
         private Dictionary<string, AudioClip> ambientDictionary = new Dictionary<string, AudioClip>();
@@ -81,7 +81,7 @@ namespace Snog.Audio.Libraries
         }
 
 #if UNITY_EDITOR
-        [ContextMenu("Rebuild Ambient Dictionary (Editor)")]
+        [ContextMenu("Rebuild Ambient Dictionary")]
         public void Editor_RebuildDictionary()
         {
             built = false;

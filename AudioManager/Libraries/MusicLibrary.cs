@@ -12,7 +12,7 @@ namespace Snog.Audio.Libraries
 {
     public class MusicLibrary : MonoBehaviour
     {
-        [Header("Music Clips (ScriptableObjects preferred)")]
+        [Header("Music Clips")]
         public MusicTrack[] musicClips;
 
         private Dictionary<string, AudioClip> musicDictionary = new Dictionary<string, AudioClip>();
