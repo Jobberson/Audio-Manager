@@ -65,13 +65,10 @@ namespace Snog.Audio
 		public List<AudioClip> scannedAmbientClips = new List<AudioClip>();
 		public List<AudioClip> scannedSFXClips = new List<AudioClip>();
 
-
-		// Seperate audiosources
 		private AudioSource musicSource;
 		private AudioSource ambientSource;
 		private AudioSource fxSource;
 
-		// Sound libraries. All your audio clips
 		private SoundLibrary soundLibrary;
 		private MusicLibrary musicLibrary;
 		private AmbientLibrary ambientLibrary;
@@ -82,7 +79,7 @@ namespace Snog.Audio
 		{
 			base.Awake();
 
-			// Ensure library refs exist at runtime (OnValidate only runs in editor)
+			// Ensure library refs exist at runtime
 			if (soundLibrary == null) soundLibrary = GetComponent<SoundLibrary>();
 			if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
 			if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
@@ -91,21 +88,16 @@ namespace Snog.Audio
 			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.", this);
 			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.", this);
 
-			// Try to auto-assign mixer/groups/snapshots (Editor-only search, runtime fallback)
 			AutoAssignMixerAndGroups();
 
-			// Create audio sources
 			CreateAudioSources();
 
-			// Try to assign groups
 			if (fxSource != null) fxSource.outputAudioMixerGroup = fxGroup;
 			if (musicSource != null) musicSource.outputAudioMixerGroup = musicGroup;
 			if (ambientSource != null) ambientSource.outputAudioMixerGroup = ambientGroup;
 
-			// Set volume on all the channels
 			SetChannelVolumes();
 
-			// Initialize 3D SFX pool
 			InitFXPool();
 		}
 		#endregion
@@ -122,7 +114,6 @@ namespace Snog.Audio
 #if UNITY_EDITOR
 			try
 			{
-				// Find the first AudioMixer asset in the project
 				string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
 				if (guids != null && guids.Length > 0)
 				{
@@ -154,7 +145,6 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null) return;
 
-			// Try to assign groups
 			TryAssignGroup(ref musicGroup, new string[] { "Music", "Master/Music", "MusicGroup", "Music_Group" });
 			TryAssignGroup(ref ambientGroup, new string[] { "Ambient", "Master/Ambient", "AmbientGroup", "Ambience" });
 			TryAssignGroup(ref fxGroup, new string[] { "FX", "SFX", "Master/FX", "Master/SFX", "FXGroup" });
@@ -250,7 +240,7 @@ namespace Snog.Audio
 			musicSource.PlayDelayed(delay);
 		}
 
-		// Play music fade in
+		// Play music with fade in
 		public IEnumerator PlayMusicFade(string musicName, float duration)
 		{
 			if (musicSource == null) yield break;
@@ -283,7 +273,7 @@ namespace Snog.Audio
 			musicSource.Stop();
 		}
 
-		// Stop music fading out to silence
+		// Stop music with fade out
 		public IEnumerator StopMusicFade(float duration)
 		{
 			if (musicSource == null) yield break;
@@ -344,7 +334,7 @@ namespace Snog.Audio
 			}
 		}
 
-		// Stop ambient sound fading out to silence
+		// Stop ambient sound with fade out
 		public IEnumerator StopAmbientFade(float duration)
 		{
 			if (ambientSource == null) yield break;
@@ -402,7 +392,6 @@ namespace Snog.Audio
 		#endregion
 
 		#region Sfx Controls
-		// FX Audio
 		public void PlaySound2D(string soundName)
 		{
 			var clip = soundLibrary.GetClipFromName(soundName);
@@ -450,20 +439,17 @@ namespace Snog.Audio
 				}
 				catch
 				{
-					// fallback to direct assignment if initialize invocation fails
 					fxPool.fxGroup = fxGroup;
 					fxPool.poolSize = poolSize;
 				}
 			}
 			else
 			{
-				// fallback if Initialize not implemented
 				fxPool.fxGroup = fxGroup;
 				fxPool.poolSize = poolSize;
 			}
 		}
 
-		// Snapshot Transitions
 		public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
 		{
 			switch (snapshot)
