@@ -16,23 +16,17 @@ public class AudioTriggerEditor : Editor
 
     private void RefreshAudioOptions()
     {
-        var manager = FindObjectOfType<AudioManager>();
-        if (manager == null)
-        {
-            audioOptions = new[] { "No AudioManager found" };
-            return;
-        }
-
+        RefreshAudioOptions();
         switch (trigger.selectedAudioType)
         {
             case AudioType.SFX:
-                manager.TryGetSoundNames(out audioOptions);
+                AudioManager.Instance.TryGetSoundNames(out audioOptions);
                 break;
             case AudioType.Music:
-                manager.TryGetMusicNames(out audioOptions);
+                AudioManager.Instance.TryGetMusicNames(out audioOptions);
                 break;
             case AudioType.Ambient:
-                manager.TryGetAmbientNames(out audioOptions);
+                AudioManager.Instance.TryGetAmbientNames(out audioOptions);
                 break;
         }
 
@@ -47,6 +41,7 @@ public class AudioTriggerEditor : Editor
         serializedObject.Update();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("selectedAudioType"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("tagToCompare"));
 
         RefreshAudioOptions();
         selectedIndex = EditorGUILayout.Popup("Audio", selectedIndex, audioOptions);

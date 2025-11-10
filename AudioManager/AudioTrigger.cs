@@ -9,7 +9,8 @@ public enum AudioType
 
 public class AudioTrigger : MonoBehaviour
 {
-    [SerializeField][Tooltip("What audio to play")] private string audio;
+    [SerializeField][Tooltip("What audio to play")] private string clip;
+    public [Tooltip("What tag should be used to check")] private string tagToCompare;
     public AudioType selectedAudioType;
     [SerializeField][Tooltip("Optional delay before playing (in seconds)")] private float playDelay = 0f;
     [SerializeField][Tooltip("ONLY FOR AMBIENT AND MUSIC")] private bool playWithFade;
@@ -19,31 +20,24 @@ public class AudioTrigger : MonoBehaviour
     {
         if (!other.CompareTag("Player")) return;
 
-        var manager = FindAnyObjectByType<AudioManager>();
-        if (manager == null)
-        {
-            Debug.LogWarning("AudioManager not found in scene.");
-            return;
-        }
-
         switch (selectedAudioType)
         {
             case AudioType.SFX:
-                manager.PlaySound2D(audio);
+                AudioManager.Instance.PlaySound2D(clip);
                 break;
 
             case AudioType.Music:
                 if (playWithFade)
-                    manager.StartCoroutine(manager.PlayMusicFade(audio, fadeDuration));
+                    AudioManager.Instance.StartCoroutine(AudioManager.Instance.PlayMusicFade(clip, fadeDuration));
                 else
-                    manager.PlayMusic(audio, playDelay);
+                    AudioManager.Instance.PlayMusic(clip, playDelay);
                 break;
 
             case AudioType.Ambient:
                 if (playWithFade)
-                    manager.StartCoroutine(manager.PlayAmbientFade(audio, fadeDuration));
+                    AudioManager.Instance.StartCoroutine(AudioManager.Instance.PlayAmbientFade(clip, fadeDuration));
                 else
-                    manager.PlayAmbient(audio, playDelay);
+                    AudioManager.Instance.PlayAmbient(clip, playDelay);
                 break;
         }
     }
