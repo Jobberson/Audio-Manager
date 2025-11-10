@@ -7,6 +7,7 @@ namespace Snog.Audio.Clips
     {
         [Header("Identification")]
         public string trackName;
+        public string moodTag; // e.g., "tense", "calm", "panic"
 
         [Header("Audio")]
         public AudioClip clip;

@@ -20,18 +20,19 @@ namespace Snog.Audio.Libraries
 
     public class SoundLibrary : MonoBehaviour
     {
-        [Header("Sound Data")]
-        public SoundClipData[] scriptableSounds;
+        [Header("ScriptableObject sound data (recommended)")]
+        public List<SoundClipData> tracks = new();
 
         [Header("Inline sound data (quick edit)")]
         public InlineSoundData[] inlineSounds;
 
+        // runtime dictionary (lazy-built)
         private Dictionary<string, AudioClip[]> soundDict = new();
         private bool built = false;
 
         private void Awake()
         {
-            BuildDictionary(); 
+            BuildDictionary(); // normal runtime build
         }
 
         /// <summary>
@@ -43,6 +44,7 @@ namespace Snog.Audio.Libraries
             BuildDictionary();
 
 #if UNITY_EDITOR
+            // Editor convenience: also include any SoundClipData assets found in the project
             try
             {
                 string[] guids = AssetDatabase.FindAssets("t:SoundClipData");
@@ -54,12 +56,15 @@ namespace Snog.Audio.Libraries
                     if (string.IsNullOrEmpty(so.soundName)) continue;
                     if (so.clips == null || so.clips.Length == 0) continue;
 
+                    // if key already exists prefer existing entry (library assignment), otherwise add
                     if (!soundDict.ContainsKey(so.soundName))
                         soundDict[so.soundName] = so.clips;
                 }
             }
             catch
-            { }
+            {
+                // don't crash editor on unexpected internal differences
+            }
 #endif
 
             built = true;
@@ -69,9 +74,9 @@ namespace Snog.Audio.Libraries
         {
             soundDict.Clear();
 
-            if (scriptableSounds != null)
+            if (tracks != null)
             {
-                foreach (var s in scriptableSounds)
+                foreach (var s in tracks)
                 {
                     if (s == null) continue;
                     if (string.IsNullOrEmpty(s.soundName)) continue;
@@ -112,7 +117,8 @@ namespace Snog.Audio.Libraries
         }
 
 #if UNITY_EDITOR
-        [ContextMenu("Rebuild Sound Dictionary")]
+        // editor utility: force rebuild and mark dirty so inspector refreshes
+        [ContextMenu("Rebuild Sound Dictionary (Editor)")]
         public void Editor_RebuildDictionary()
         {
             built = false;

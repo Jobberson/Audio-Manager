@@ -12,10 +12,10 @@ namespace Snog.Audio.Libraries
 {
     public class MusicLibrary : MonoBehaviour
     {
-        [Header("Music Clips")]
-        public MusicTrack[] musicClips;
+        [Header("Music Clips (ScriptableObjects preferred)")]
+        public List<MusicTrack> tracks = new();
 
-        private Dictionary<string, AudioClip> musicDictionary = new Dictionary<string, AudioClip>();
+        private Dictionary<string, AudioClip> musicDictionary = new();
         private bool built = false;
 
         private void Awake()
@@ -30,6 +30,7 @@ namespace Snog.Audio.Libraries
             BuildDictionary();
 
 #if UNITY_EDITOR
+            // Editor: also include any MusicTrack assets in project
             try
             {
                 string[] guids = AssetDatabase.FindAssets("t:MusicTrack");
@@ -54,9 +55,9 @@ namespace Snog.Audio.Libraries
         {
             musicDictionary.Clear();
 
-            if (musicClips != null)
+            if (tracks != null)
             {
-                foreach (var m in musicClips)
+                foreach (var m in tracks)
                 {
                     if (m == null) continue;
                     if (string.IsNullOrEmpty(m.trackName)) continue;

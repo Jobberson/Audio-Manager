@@ -56,11 +56,11 @@ public class AudioSourcePool : MonoBehaviour
     {
         if (Instance != null && Instance != this)
         {
-            Destroy(gameObject);
+            Destroy(gameObject); // Prevent duplicates
             return;
         }
 
         Instance = this;
-        DontDestroyOnLoad(gameObject);
+        DontDestroyOnLoad(gameObject); // Persist between scenes
     }
 }

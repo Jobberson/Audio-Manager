@@ -1,9 +1,14 @@
 ﻿﻿using UnityEngine;
-using UnityEngine.Audio;
-using System.IO;
-using System.Reflection;
 using System.Collections;
+using UnityEngine.Audio;
 using Snog.Audio.Libraries;
+using Snog.Audio.Clips;
+using System.Reflection;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -36,10 +41,10 @@ namespace Snog.Audio
 		public string audioFolderPath;
 
 		[Header("Volume")]
-		[SerializeField, Range(0, 1)] private float masterVolume = 1;
-		[SerializeField, Range(0, 1)] private float musicVolume = 1f;
-		[SerializeField, Range(0, 1)] private float ambientVolume = 1;
-		[SerializeField, Range(0, 1)] private float fxVolume = 1;
+		[SerializeField, Range(0, 1)] private float masterVolume = 1; // Overall volume
+		[SerializeField, Range(0, 1)] private float musicVolume = 1f; // Music volume
+		[SerializeField, Range(0, 1)] private float ambientVolume = 1; // Ambient volume
+		[SerializeField, Range(0, 1)] private float fxVolume = 1; // FX volume
 
 		[SerializeField] private bool MusicIsLooping = true;
 		[SerializeField] private bool AmbientIsLooping = true;
@@ -61,14 +66,17 @@ namespace Snog.Audio
 		[SerializeField] private int poolSize = 10;
 
 		[Header("Scanned Clips")]
-		public List<AudioClip> scannedMusicClips = new List<AudioClip>();
-		public List<AudioClip> scannedAmbientClips = new List<AudioClip>();
-		public List<AudioClip> scannedSFXClips = new List<AudioClip>();
+		public List<AudioClip> scannedMusicClips = new();
+		public List<AudioClip> scannedAmbientClips = new();
+		public List<AudioClip> scannedSFXClips = new();
 
+
+		// Seperate audiosources
 		private AudioSource musicSource;
 		private AudioSource ambientSource;
 		private AudioSource fxSource;
 
+		// Sound libraries. All your audio clips
 		private SoundLibrary soundLibrary;
 		private MusicLibrary musicLibrary;
 		private AmbientLibrary ambientLibrary;
@@ -79,25 +87,30 @@ namespace Snog.Audio
 		{
 			base.Awake();
 
-			// Ensure library refs exist at runtime
+			// Ensure library refs exist at runtime (OnValidate only runs in editor)
 			if (soundLibrary == null) soundLibrary = GetComponent<SoundLibrary>();
 			if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
 			if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
 
-			if (soundLibrary == null) Debug.LogWarning("SoundLibrary component missing on this GameObject.");
-			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.");
-			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.");
+			if (soundLibrary == null) Debug.LogWarning("SoundLibrary component missing on this GameObject.", this);
+			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.", this);
+			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.", this);
 
+			// Try to auto-assign mixer/groups/snapshots (Editor-only search, runtime fallback)
 			AutoAssignMixerAndGroups();
 
+			// Create audio sources
 			CreateAudioSources();
 
+			// Assign groups (safe - group may be null)
 			if (fxSource != null) fxSource.outputAudioMixerGroup = fxGroup;
 			if (musicSource != null) musicSource.outputAudioMixerGroup = musicGroup;
 			if (ambientSource != null) ambientSource.outputAudioMixerGroup = ambientGroup;
 
+			// Set volume on all the channels
 			SetChannelVolumes();
 
+			// Initialize 3D SFX pool
 			InitFXPool();
 		}
 		#endregion
@@ -105,7 +118,8 @@ namespace Snog.Audio
 		#region Auto-assign helpers
 		private void AutoAssignMixerAndGroups()
 		{
-			if (mainMixer != null) 
+			// If already set, nothing to do
+			if (mainMixer != null)
 			{
 				TryAssignMissingGroupsAndSnapshots();
 				return;
@@ -114,6 +128,7 @@ namespace Snog.Audio
 #if UNITY_EDITOR
 			try
 			{
+				// Find the first AudioMixer asset in the project
 				string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
 				if (guids != null && guids.Length > 0)
 				{
@@ -122,22 +137,23 @@ namespace Snog.Audio
 					if (mixer != null)
 					{
 						mainMixer = mixer;
-						Debug.Log($"Auto-assigned mainMixer: {mixer.name}");
+						Debug.Log($"Auto-assigned mainMixer: {mixer.name}", this);
 					}
 				}
 			}
 			catch (System.Exception ex)
 			{
-				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}");
+				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}", this);
 			}
 #endif
+			// If we found a mixer, try to find groups and snapshots by common names
 			if (mainMixer != null)
 			{
 				TryAssignMissingGroupsAndSnapshots();
 			}
 			else
 			{
-				Debug.LogWarning("No AudioMixer assigned and none found automatically. Assign mainMixer manually in inspector or place a mixer asset in the project.");
+				Debug.LogWarning("No AudioMixer assigned and none found automatically. Assign mainMixer manually in inspector or place a mixer asset in the project.", this);
 			}
 		}
 
@@ -145,10 +161,12 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null) return;
 
+			// Try to assign groups by common names (case-sensitive matching performed by FindMatchingGroups)
 			TryAssignGroup(ref musicGroup, new string[] { "Music", "Master/Music", "MusicGroup", "Music_Group" });
 			TryAssignGroup(ref ambientGroup, new string[] { "Ambient", "Master/Ambient", "AmbientGroup", "Ambience" });
 			TryAssignGroup(ref fxGroup, new string[] { "FX", "SFX", "Master/FX", "Master/SFX", "FXGroup" });
 
+			// Snapshots — try common snapshot names
 			if (defaultSnapshot == null) defaultSnapshot = mainMixer.FindSnapshot("Default");
 			if (combatSnapshot == null) combatSnapshot = mainMixer.FindSnapshot("Combat");
 			if (stealthSnapshot == null) stealthSnapshot = mainMixer.FindSnapshot("Stealth");
@@ -167,21 +185,21 @@ namespace Snog.Audio
 					if (found != null && found.Length > 0)
 					{
 						groupRef = found[0];
-						Debug.Log($"Auto-assigned group '{groupRef.name}' for candidate '{name}'.");
+						Debug.Log($"Auto-assigned group '{groupRef.name}' for candidate '{name}'.", this);
 						return;
 					}
 				}
-				catch {}
+				catch { /* FindMatchingGroups can throw if the name is weird — ignore and continue */ }
 			}
 
-			// Fallback
+			// Fallback: try "Master" group if present
 			try
 			{
 				var master = mainMixer.FindMatchingGroups("Master");
 				if (master != null && master.Length > 0)
 				{
 					groupRef = master[0];
-					Debug.Log($"Fallback assigned group '{groupRef.name}'.");
+					Debug.Log($"Fallback assigned group '{groupRef.name}'.", this);
 				}
 			}
 			catch { }
@@ -201,7 +219,7 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning("Cannot SetVolume: mainMixer is not assigned.");
+				Debug.LogWarning("Cannot SetVolume: mainMixer is not assigned.", this);
 				return;
 			}
 
@@ -232,7 +250,7 @@ namespace Snog.Audio
 			var clip = musicLibrary.GetClipFromName(musicName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.");
+				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
 				return;
 			}
 			if (musicSource == null) return;
@@ -240,7 +258,7 @@ namespace Snog.Audio
 			musicSource.PlayDelayed(delay);
 		}
 
-		// Play music with fade in
+		// Play music fade in
 		public IEnumerator PlayMusicFade(string musicName, float duration)
 		{
 			if (musicSource == null) yield break;
@@ -252,7 +270,7 @@ namespace Snog.Audio
 			var clip = musicLibrary.GetClipFromName(musicName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.");
+				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
 				yield break;
 			}
 			musicSource.clip = clip;
@@ -273,7 +291,7 @@ namespace Snog.Audio
 			musicSource.Stop();
 		}
 
-		// Stop music with fade out
+		// Stop music fading out
 		public IEnumerator StopMusicFade(float duration)
 		{
 			if (musicSource == null) yield break;
@@ -301,7 +319,7 @@ namespace Snog.Audio
 			var clip = ambientLibrary.GetClipFromName(ambientName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.");
+				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
 				return;
 			}
 			if (ambientSource == null) return;
@@ -320,7 +338,7 @@ namespace Snog.Audio
 			var clip = ambientLibrary.GetClipFromName(ambientName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.");
+				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
 				yield break;
 			}
 			ambientSource.clip = clip;
@@ -334,7 +352,7 @@ namespace Snog.Audio
 			}
 		}
 
-		// Stop ambient sound with fade out
+		// Stop ambient sound fading out
 		public IEnumerator StopAmbientFade(float duration)
 		{
 			if (ambientSource == null) yield break;
@@ -352,9 +370,10 @@ namespace Snog.Audio
 			}
 
 			ambientSource.Stop();
-			ambientSource.volume = currentVolume; 
+			ambientSource.volume = currentVolume; // Reset volume for next playback
 		}
 
+		// Crossfade ambient sound
 		public IEnumerator CrossfadeAmbient(string newClipName, float duration)
 		{
 			AudioClip newClip = ambientLibrary.GetClipFromName(newClipName);
@@ -384,6 +403,7 @@ namespace Snog.Audio
 			ambientSource = tempSource;
 		}
 
+		// Stop ambient sound
 		public void StopAmbient()
 		{
 			if (ambientSource == null) return;
@@ -392,12 +412,13 @@ namespace Snog.Audio
 		#endregion
 
 		#region Sfx Controls
+		// FX Audio
 		public void PlaySound2D(string soundName)
 		{
 			var clip = soundLibrary.GetClipFromName(soundName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.");
+				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
 				return;
 			}
 			if (fxSource == null) return;
@@ -409,12 +430,12 @@ namespace Snog.Audio
 			var clip = soundLibrary.GetClipFromName(soundName);
 			if (clip == null)
 			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.");
+				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
 				return;
 			}
 			if (fxPool == null)
 			{
-				Debug.LogWarning("FX Pool not initialized.");
+				Debug.LogWarning("FX Pool not initialized.", this);
 				return;
 			}
 			fxPool.PlayClip(clip, soundPosition, fxVolume * masterVolume);
@@ -430,6 +451,7 @@ namespace Snog.Audio
 			poolObj.transform.parent = transform;
 			fxPool = poolObj.AddComponent<AudioSourcePool>();
 
+			// Try to call Initialize(int, AudioMixerGroup) if present (supports older/newer pool implementations)
 			MethodInfo initMethod = fxPool.GetType().GetMethod("Initialize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 			if (initMethod != null)
 			{
@@ -439,17 +461,20 @@ namespace Snog.Audio
 				}
 				catch
 				{
+					// fallback to direct assignment if initialize invocation fails
 					fxPool.fxGroup = fxGroup;
 					fxPool.poolSize = poolSize;
 				}
 			}
 			else
 			{
+				// fallback if Initialize not implemented
 				fxPool.fxGroup = fxGroup;
 				fxPool.poolSize = poolSize;
 			}
 		}
 
+		// Snapshot Transitions
 		public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
 		{
 			switch (snapshot)
@@ -467,28 +492,28 @@ namespace Snog.Audio
 					if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
 					break;
 				default:
-					Debug.LogWarning($"Snapshot '{snapshot}' not found.");
+					Debug.LogWarning($"Snapshot '{snapshot}' not found.", this);
 					break;
 			}
 		}
 
 		private void CreateAudioSources()
 		{
-			GameObject newfxSource = new GameObject("2D fx source");
+			GameObject newfxSource = new("2D fx source");
 			fxSource = newfxSource.AddComponent<AudioSource>();
 			newfxSource.transform.parent = transform;
 			fxSource.playOnAwake = false;
 
-			GameObject newMusicSource = new GameObject("Music source");
+			GameObject newMusicSource = new("Music source");
 			musicSource = newMusicSource.AddComponent<AudioSource>();
 			newMusicSource.transform.parent = transform;
-			musicSource.loop = MusicIsLooping;
+			musicSource.loop = MusicIsLooping; // Music is looping
 			musicSource.playOnAwake = false;
 
-			GameObject newAmbientsource = new GameObject("Ambient source");
+			GameObject newAmbientsource = new("Ambient source");
 			ambientSource = newAmbientsource.AddComponent<AudioSource>();
 			newAmbientsource.transform.parent = transform;
-			ambientSource.loop = AmbientIsLooping; 
+			ambientSource.loop = AmbientIsLooping; // Ambient sound is looping
 			ambientSource.playOnAwake = false;
 		}
 		#endregion
@@ -552,12 +577,12 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.");
+				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.", this);
 				return;
 			}
 			if (!mainMixer.SetFloat(parameterName, value))
 			{
-				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.");
+				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
 			}
 		}
 
@@ -565,17 +590,17 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null)
 			{
-				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.");
+				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.", this);
 				return -1f;
 			}
 			if (mainMixer.GetFloat(parameterName, out float value))
 				return value;
 
-			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.");
+			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
 			return -1f;
 		}
 
-		#if UNITY_EDITOR
+#if UNITY_EDITOR
 		private void OnValidate()
 		{
 			if (!Application.isPlaying)
@@ -602,191 +627,323 @@ namespace Snog.Audio
 			musicLibrary = GetComponent<MusicLibrary>();
 			ambientLibrary = GetComponent<AmbientLibrary>();
 		}
+#endif
 		#endregion
 
 		#region Folder Scan
+#if UNITY_EDITOR
+		private const float SFX_MAX_LENGTH = 30f;     // <= this -> SFX candidate
+		private const float AMBIENT_MIN_LENGTH = 30f; // ambient if between AMBIENT_MIN_LENGTH and MUSIC_MIN_LENGTH
+		private const float MUSIC_MIN_LENGTH = 60f;   // >= this -> music candidate
+
+		/// <summary>
+		/// Let user pick a folder inside Assets. Forces project-relative path (Assets/...)
+		/// </summary>
 		public void SetAudioFolderPath()
 		{
-			string selectedPath = EditorUtility.OpenFolderPanel("Select Audio Folder", "Assets", "");
-			if (!string.IsNullOrEmpty(selectedPath))
+			string selectedPath = EditorUtility.OpenFolderPanel("Select Audio Folder (must be inside Assets)", "Assets", "");
+			if (string.IsNullOrEmpty(selectedPath)) return;
+
+			if (!selectedPath.StartsWith(Application.dataPath))
 			{
-				if (selectedPath.StartsWith(Application.dataPath))
-				{
-					audioFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length);
-					Debug.Log($"Audio folder set to: {audioFolderPath}");
-				}
-				else
-				{
-					Debug.LogWarning("Selected folder must be inside the Assets directory.");
-				}
+				Debug.LogWarning("[AudioManager] Selected folder must be inside the project's Assets folder.");
+				return;
 			}
+
+			// Convert to project-relative path and normalize slashes
+			audioFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length).Replace("\\", "/").TrimEnd('/');
+			Debug.Log($"[AudioManager] audioFolderPath set to: {audioFolderPath}");
 		}
 
+		/// <summary>
+		/// Scans the configured folder for AudioClips and fills the temporary scanned lists:
+		/// scannedMusicClips, scannedAmbientClips, scannedSFXClips
+		/// </summary>
 		public void ScanFolders()
 		{
+			// Ensure lists exist
+			scannedMusicClips = scannedMusicClips ?? new List<AudioClip>();
+			scannedAmbientClips = scannedAmbientClips ?? new List<AudioClip>();
+			scannedSFXClips = scannedSFXClips ?? new List<AudioClip>();
+
 			scannedMusicClips.Clear();
 			scannedAmbientClips.Clear();
 			scannedSFXClips.Clear();
 
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("Audio folder path is not set. Please set it first.");
+				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
 			string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
-
-			foreach (string guid in guids)
+			int total = guids.Length;
+			for (int i = 0; i < total; i++)
 			{
-				string path = AssetDatabase.GUIDToAssetPath(guid);
-				AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+				EditorUtility.DisplayProgressBar("Scanning Audio", $"Processing clip {i + 1}/{total}", (float)i / Mathf.Max(1, total));
+				string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+				var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
 				if (clip == null) continue;
 
-				string lowerPath = path.ToLower();
-				string lowerName = clip.name.ToLower();
+				string normalizedPath = path.ToLower().Replace("\\", "/");
+				string fileName = Path.GetFileNameWithoutExtension(path).ToLower();
 
-				if (lowerPath.Contains("music") || lowerName.Contains("music"))
+				// Folder-based hints (highest priority)
+				if (normalizedPath.Contains("/music/") || normalizedPath.Contains("/bgm/") || fileName.Contains("music") || fileName.Contains("bgm") || fileName.Contains("theme"))
+				{
+					scannedMusicClips.Add(clip);
+					continue;
+				}
+				if (normalizedPath.Contains("/ambient/") || normalizedPath.Contains("/ambience/") || normalizedPath.Contains("/environment/") || fileName.Contains("ambient") || fileName.Contains("amb"))
+				{
+					scannedAmbientClips.Add(clip);
+					continue;
+				}
+				if (normalizedPath.Contains("/sfx/") || normalizedPath.Contains("/fx/") || normalizedPath.Contains("/soundeffects/") || fileName.Contains("sfx") || fileName.Contains("fx"))
+				{
+					scannedSFXClips.Add(clip);
+					continue;
+				}
+
+				// Filename heuristics
+				if (fileName.Contains("music") || fileName.Contains("bgm") || fileName.Contains("theme") || clip.length >= MUSIC_MIN_LENGTH)
 				{
 					scannedMusicClips.Add(clip);
 				}
-				else if (lowerPath.Contains("ambient") || lowerName.Contains("ambient") || lowerName.Contains("amb"))
+				else if (fileName.Contains("ambient") || fileName.Contains("amb") || clip.length >= AMBIENT_MIN_LENGTH)
 				{
 					scannedAmbientClips.Add(clip);
 				}
-				else if (lowerPath.Contains("sfx") || lowerName.Contains("sfx") || lowerName.Contains("fx") || lowerName.Contains("sound"))
+				else
 				{
 					scannedSFXClips.Add(clip);
 				}
-				else
-				{
-					// Fallback
-					if (lowerName.Contains("loop") || lowerName.Contains("theme"))
-						scannedMusicClips.Add(clip);
-					else if (lowerName.Contains("wind") || lowerName.Contains("rain") || lowerName.Contains("forest"))
-						scannedAmbientClips.Add(clip);
-					else
-						scannedSFXClips.Add(clip);
-				}
 			}
 
-			Debug.Log($"Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} SFX clips found.");
+			EditorUtility.ClearProgressBar();
+			Debug.Log($"[AudioManager] Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} sfx.");
 		}
 
+		/// <summary>
+		/// Ensure a folder exists under parent (creates it if needed) and returns the full path.
+		/// </summary>
+		private string EnsureSubfolder(string parentFolder, string subfolderName)
+		{
+			parentFolder = parentFolder.TrimEnd('/');
+			var candidate = parentFolder + "/" + subfolderName;
+			if (!AssetDatabase.IsValidFolder(candidate))
+			{
+				AssetDatabase.CreateFolder(parentFolder, subfolderName);
+			}
+			return candidate;
+		}
+
+		/// <summary>
+		/// Generate ScriptableObjects under a GeneratedTracks folder with structured subfolders:
+		/// GeneratedTracks/Music, GeneratedTracks/Ambient, GeneratedTracks/SFX
+		/// For SFX we group variants by folder name (preferred) or filename prefix (fallback).
+		/// </summary>
 		public void GenerateScriptableObjects()
 		{
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("Audio folder path is not set.");
+				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
-			string generatedFolder = Path.Combine(audioFolderPath, "GeneratedTracks");
+			// Ensure GeneratedTracks and subfolders exist
+			string generatedFolder = audioFolderPath.TrimEnd('/') + "/GeneratedTracks";
 			if (!AssetDatabase.IsValidFolder(generatedFolder))
 			{
 				AssetDatabase.CreateFolder(audioFolderPath, "GeneratedTracks");
 			}
 
-			string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
-			int musicCount = 0, ambientCount = 0, sfxCount = 0;
+			string musicFolder = EnsureSubfolder(generatedFolder, "Music");
+			string ambientFolder = EnsureSubfolder(generatedFolder, "Ambient");
+			string sfxFolder = EnsureSubfolder(generatedFolder, "SFX");
 
-			foreach (string guid in guids)
+			// Find clips deterministically
+			string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
+			int total = guids.Length;
+			EditorUtility.DisplayProgressBar("Generating Assets", $"Analyzing {total} clips", 0f);
+
+			// Prepare SFX grouping map
+			Dictionary<string, List<AudioClip>> sfxGroups = new();
+
+			int createdMusic = 0, createdAmbient = 0, createdSfx = 0;
+
+			for (int i = 0; i < total; i++)
 			{
-				string clipPath = AssetDatabase.GUIDToAssetPath(guid);
-				AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(clipPath);
+				string clipPath = AssetDatabase.GUIDToAssetPath(guids[i]);
+				var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(clipPath);
 				if (clip == null) continue;
 
 				string fileName = Path.GetFileNameWithoutExtension(clipPath);
-				string assetPath = Path.Combine(generatedFolder, fileName + ".asset");
+				string sanitizedFileName = SanitizeAssetName(fileName);
+				string normalizedPath = clipPath.ToLower().Replace("\\", "/");
 
-				if (File.Exists(assetPath)) continue;
+				EditorUtility.DisplayProgressBar("Generating Assets", $"Processing {i + 1}/{total}: {fileName}", (float)i / Mathf.Max(1, total));
 
-				ScriptableObject track = null;
-				string folderLower = audioFolderPath.ToLower();
+				// Decide type and target folder
+				bool isMusic = normalizedPath.Contains("/music/") || fileName.ToLower().Contains("music") || clip.length >= MUSIC_MIN_LENGTH;
+				bool isAmbient = !isMusic && (normalizedPath.Contains("/ambient/") || fileName.ToLower().Contains("ambient") || (clip.length >= AMBIENT_MIN_LENGTH && clip.length < MUSIC_MIN_LENGTH));
+				bool isSfx = !isMusic && !isAmbient || normalizedPath.Contains("/sfx/") || normalizedPath.Contains("/fx/") || clip.length <= SFX_MAX_LENGTH;
 
-				if (folderLower.Contains("music"))
+				if (isMusic)
 				{
-					track = ScriptableObject.CreateInstance<MusicTrack>();
-					((MusicTrack)track).trackName = fileName;
-					((MusicTrack)track).clip = clip;
-					musicCount++;
-				}
-				else if (folderLower.Contains("ambient"))
-				{
-					track = ScriptableObject.CreateInstance<AmbientTrack>();
-					((AmbientTrack)track).trackName = fileName;
-					((AmbientTrack)track).clip = clip;
-					ambientCount++;
-				}
-				else if (folderLower.Contains("sfx"))
-				{
-					track = ScriptableObject.CreateInstance<SFXTrack>();
-					((SFXTrack)track).trackName = fileName;
-					((SFXTrack)track).clip = clip;
-					sfxCount++;
-				}
-				else
-				{
-					Debug.LogWarning($"Unknown track type for clip: {fileName}");
+					string assetPath = $"{musicFolder}/{sanitizedFileName}.asset";
+					if (AssetDatabase.LoadAssetAtPath<MusicTrack>(assetPath) != null) continue;
+
+					var mt = ScriptableObject.CreateInstance<MusicTrack>();
+					mt.trackName = fileName;
+					mt.clip = clip;
+					mt.description = $"Generated from {clipPath}";
+					AssetDatabase.CreateAsset(mt, assetPath);
+					createdMusic++;
 					continue;
 				}
 
-				AssetDatabase.CreateAsset(track, assetPath);
-				Debug.Log($"Created ScriptableObject: {assetPath}");
+				if (isAmbient)
+				{
+					string assetPath = $"{ambientFolder}/{sanitizedFileName}.asset";
+					if (AssetDatabase.LoadAssetAtPath<AmbientTrack>(assetPath) != null) continue;
+
+					var at = ScriptableObject.CreateInstance<AmbientTrack>();
+					at.trackName = fileName;
+					at.clip = clip;
+					at.description = $"Generated from {clipPath}";
+					AssetDatabase.CreateAsset(at, assetPath);
+					createdAmbient++;
+					continue;
+				}
+
+				// SFX candidate: group by folder or prefix
+				string parentFolder = Path.GetFileName(Path.GetDirectoryName(clipPath));
+				parentFolder = string.IsNullOrEmpty(parentFolder) ? fileName : parentFolder;
+
+				string lowerParent = parentFolder.ToLower();
+				bool parentIsGeneric = lowerParent == "sfx" || lowerParent == "sounds" || lowerParent == "audio" || lowerParent == "clips";
+				string groupKey;
+				if (!parentIsGeneric)
+				{
+					groupKey = SanitizeAssetName(parentFolder);
+				}
+				else
+				{
+					string fileLower = fileName.ToLower();
+					int idx = fileLower.IndexOfAny(new char[] { '_', '-' });
+					if (idx > 0) groupKey = SanitizeAssetName(fileName.Substring(0, idx));
+					else groupKey = SanitizeAssetName(fileName);
+				}
+
+				if (!sfxGroups.TryGetValue(groupKey, out var list))
+				{
+					list = new List<AudioClip>();
+					sfxGroups[groupKey] = list;
+				}
+				list.Add(clip);
 			}
 
+			// Create SFX assets (one SoundClipData per group) under the SFX subfolder
+			int processedGroups = 0;
+			int groupsTotal = sfxGroups.Count;
+			foreach (var kv in sfxGroups)
+			{
+				processedGroups++;
+				EditorUtility.DisplayProgressBar("Generating SFX", $"Creating SFX {processedGroups}/{groupsTotal}: {kv.Key}", (float)processedGroups / Mathf.Max(1, groupsTotal));
+				string assetPath = $"{sfxFolder}/{kv.Key}.asset";
+
+				// skip if exists
+				if (AssetDatabase.LoadAssetAtPath<SoundClipData>(assetPath) != null) continue;
+
+				var sd = ScriptableObject.CreateInstance<SoundClipData>();
+				sd.soundName = kv.Key;
+				sd.clips = kv.Value.ToArray();
+				AssetDatabase.CreateAsset(sd, assetPath);
+				createdSfx++;
+			}
+
+			EditorUtility.ClearProgressBar();
 			AssetDatabase.SaveAssets();
 			AssetDatabase.Refresh();
-			Debug.Log($"Generated {musicCount} music, {ambientCount} ambient, and {sfxCount} SFX tracks.");
+
+			Debug.Log($"[AudioManager] Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}");
 		}
 
+		/// <summary>
+		/// Assigns generated assets to the appropriate runtime libraries on this GameObject.
+		/// Uses the structured GeneratedTracks subfolders.
+		/// </summary>
 		public void AssignToLibraries()
 		{
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("Audio folder path is not set.");
+				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
-			string generatedFolder = System.IO.Path.Combine(audioFolderPath, "GeneratedTracks");
+			string generatedFolder = audioFolderPath.TrimEnd('/') + "/GeneratedTracks";
 			if (!AssetDatabase.IsValidFolder(generatedFolder))
 			{
-				Debug.LogWarning("GeneratedTracks folder not found.");
+				Debug.LogWarning("[AudioManager] GeneratedTracks folder not found. Run GenerateScriptableObjects() first.");
 				return;
 			}
 
-			MusicLibrary musicLib = GetComponent<MusicLibrary>();
-			AmbientLibrary ambientLib = GetComponent<AmbientLibrary>();
-			SFXLibrary sfxLib = GetComponent<SFXLibrary>();
+			string musicFolder = generatedFolder + "/Music";
+			string ambientFolder = generatedFolder + "/Ambient";
+			string sfxFolder = generatedFolder + "/SFX";
+
+			var musicLib = GetComponent<MusicLibrary>();
+			var ambientLib = GetComponent<AmbientLibrary>();
+			var sfxLib = GetComponent<SoundLibrary>();
+
 			if (musicLib == null || ambientLib == null || sfxLib == null)
 			{
-				Debug.LogWarning("One or more library components are missing.");
+				Debug.LogWarning("[AudioManager] Missing one or more library components on this GameObject.");
 				return;
 			}
 
-			int musicCount = 0;
-			int ambientCount = 0;
-			int sfxCount = 0;
+			int addedMusic = 0, addedAmbient = 0, addedSfx = 0;
 
-			string[] guids = AssetDatabase.FindAssets("t:ScriptableObject", new[] { generatedFolder });
-			foreach (string guid in guids)
+			if (AssetDatabase.IsValidFolder(musicFolder))
 			{
-				string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-				ScriptableObject obj = AssetDatabase.LoadAssetAtPath<ScriptableObject>(assetPath);
+				foreach (var guid in AssetDatabase.FindAssets("t:MusicTrack", new[] { musicFolder }))
+				{
+					var p = AssetDatabase.GUIDToAssetPath(guid);
+					var mt = AssetDatabase.LoadAssetAtPath<MusicTrack>(p);
+					if (mt != null && !musicLib.tracks.Contains(mt))
+					{
+						musicLib.tracks.Add(mt);
+						addedMusic++;
+					}
+				}
+			}
 
-				if (obj is MusicTrack musicTrack && !musicLib.tracks.Contains(musicTrack))
+			if (AssetDatabase.IsValidFolder(ambientFolder))
+			{
+				foreach (var guid in AssetDatabase.FindAssets("t:AmbientTrack", new[] { ambientFolder }))
 				{
-					musicLib.tracks.Add(musicTrack);
-					musicCount++;
+					var p = AssetDatabase.GUIDToAssetPath(guid);
+					var at = AssetDatabase.LoadAssetAtPath<AmbientTrack>(p);
+					if (at != null && !ambientLib.tracks.Contains(at))
+					{
+						ambientLib.tracks.Add(at);
+						addedAmbient++;
+					}
 				}
-				else if (obj is AmbientTrack ambientTrack && !ambientLib.tracks.Contains(ambientTrack))
+			}
+
+			if (AssetDatabase.IsValidFolder(sfxFolder))
+			{
+				foreach (var guid in AssetDatabase.FindAssets("t:SoundClipData", new[] { sfxFolder }))
 				{
-					ambientLib.tracks.Add(ambientTrack);
-					ambientCount++;
-				}
-				else if (obj is SFXTrack sfxTrack && !sfxLib.tracks.Contains(sfxTrack))
-				{
-					sfxLib.tracks.Add(sfxTrack);
-					sfxCount++;
+					var p = AssetDatabase.GUIDToAssetPath(guid);
+					var sd = AssetDatabase.LoadAssetAtPath<SoundClipData>(p);
+					if (sd != null && !sfxLib.tracks.Contains(sd))
+					{
+						sfxLib.tracks.Add(sd);
+						addedSfx++;
+					}
 				}
 			}
 
@@ -795,9 +952,22 @@ namespace Snog.Audio
 			EditorUtility.SetDirty(sfxLib);
 			AssetDatabase.SaveAssets();
 
-			Debug.Log($"Assigned {musicCount} music, {ambientCount} ambient, and {sfxCount} SFX tracks to libraries.");
+			Debug.Log($"[AudioManager] Assigned to libraries — Music: {addedMusic}, Ambient: {addedAmbient}, SFX: {addedSfx}");
 		}
-		#endif
+
+		/// <summary>
+		/// Helper: sanitize a folder or filename into a safe asset-friendly string.
+		/// </summary>
+		private string SanitizeAssetName(string raw)
+		{
+			if (string.IsNullOrEmpty(raw)) return "unnamed";
+			// remove invalid characters and trim
+			var clean = new string(raw.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+			return clean.Trim().Replace(' ', '_').ToLower();
+		}
+#endif
 		#endregion
+
+
 	}
 }

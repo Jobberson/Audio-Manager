@@ -12,10 +12,10 @@ namespace Snog.Audio.Libraries
 {
     public class AmbientLibrary : MonoBehaviour
     {
-        [Header("Ambient Clips")]
-        public AmbientTrack[] ambientClips;
+        [Header("Ambient Clips (ScriptableObjects preferred)")]
+        public List<AmbientTrack> tracks = new();
 
-        private Dictionary<string, AudioClip> ambientDictionary = new Dictionary<string, AudioClip>();
+        private Dictionary<string, AudioClip> ambientDictionary = new();
         private bool built = false;
 
         private void Awake()
@@ -30,6 +30,7 @@ namespace Snog.Audio.Libraries
             BuildDictionary();
 
 #if UNITY_EDITOR
+            // Editor: include AmbientTrack assets found in project
             try
             {
                 string[] guids = AssetDatabase.FindAssets("t:AmbientTrack");
@@ -54,9 +55,9 @@ namespace Snog.Audio.Libraries
         {
             ambientDictionary.Clear();
 
-            if (ambientClips != null)
+            if (tracks != null)
             {
-                foreach (var a in ambientClips)
+                foreach (var a in tracks)
                 {
                     if (a == null) continue;
                     if (string.IsNullOrEmpty(a.trackName)) continue;
@@ -81,7 +82,7 @@ namespace Snog.Audio.Libraries
         }
 
 #if UNITY_EDITOR
-        [ContextMenu("Rebuild Ambient Dictionary")]
+        [ContextMenu("Rebuild Ambient Dictionary (Editor)")]
         public void Editor_RebuildDictionary()
         {
             built = false;

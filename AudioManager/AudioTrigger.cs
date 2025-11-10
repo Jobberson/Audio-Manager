@@ -1,4 +1,5 @@
 using UnityEngine;
+using Snog.Audio;
 
 public enum AudioType
 {
@@ -10,15 +11,15 @@ public enum AudioType
 public class AudioTrigger : MonoBehaviour
 {
     [SerializeField][Tooltip("What audio to play")] private string clip;
-    public [Tooltip("What tag should be used to check")] private string tagToCompare;
     public AudioType selectedAudioType;
     [SerializeField][Tooltip("Optional delay before playing (in seconds)")] private float playDelay = 0f;
-    [SerializeField][Tooltip("ONLY FOR AMBIENT AND MUSIC")] private bool playWithFade;
+    [Tooltip("ONLY FOR AMBIENT AND MUSIC")] public bool playWithFade;
     [SerializeField][Tooltip("Fade duration (only used if playWithFade is true)")] private float fadeDuration = 2f;
+    public string TagToCompare = "Player";
 
-    private void OnTriggerExit(Collider other)
+    private void OnTriggerEnter(Collider other)
     {
-        if (!other.CompareTag("Player")) return;
+        if (!other.CompareTag(TagToCompare)) return;
 
         switch (selectedAudioType)
         {

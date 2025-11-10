@@ -33,6 +33,7 @@ namespace Snog.Audio
         private bool showInfoSection = true;
         private bool showUtilitiesSection = true;
 
+        // Reflection cache for AudioUtil (editor preview playback)
         private static System.Type audioUtilType;
         private static MethodInfo playPreviewMethod;
         private static MethodInfo stopAllPreviewMethod;
@@ -95,7 +96,7 @@ namespace Snog.Audio
             {
                 EditorGUILayout.Space(4);
 
-                if (GUILayout.Button(new GUIContent("📁 Set Root Audio Folder", "Choose the root folder where your audio clips are stored")));
+                if (GUILayout.Button(new GUIContent("📁 Set Root Audio Folder", "Choose the root folder where your audio clips are stored")))
                 {
                     manager.SetAudioFolderPath();
                 }
