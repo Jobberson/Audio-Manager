@@ -8,14 +8,19 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 
-
-
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
 namespace Snog.Audio
 {
+	public enum FadeCurveType
+	{
+		Linear,
+		EaseInOut,
+		Exponential
+	}
+
 	[RequireComponent(typeof(SoundLibrary))]
 	[RequireComponent(typeof(MusicLibrary))]
 	[RequireComponent(typeof(AmbientLibrary))]
@@ -373,36 +378,6 @@ namespace Snog.Audio
 			ambientSource.volume = currentVolume; // Reset volume for next playback
 		}
 
-		// Crossfade ambient sound
-		public IEnumerator CrossfadeAmbient(string newClipName, float duration)
-		{
-			AudioClip newClip = ambientLibrary.GetClipFromName(newClipName);
-			if (newClip == null) yield break;
-
-			AudioSource tempSource = gameObject.AddComponent<AudioSource>();
-			tempSource.clip = newClip;
-			tempSource.outputAudioMixerGroup = ambientGroup;
-			tempSource.loop = AmbientIsLooping;
-			tempSource.volume = 0;
-			tempSource.Play();
-
-			float time = 0;
-			float startVolume = ambientSource != null ? ambientSource.volume : 1f;
-
-			while (time < duration)
-			{
-				time += Time.deltaTime;
-				float t = time / duration;
-				if (ambientSource != null) ambientSource.volume = Mathf.Lerp(startVolume, 0, t);
-				tempSource.volume = Mathf.Lerp(0, startVolume, t);
-				yield return null;
-			}
-
-			if (ambientSource != null) ambientSource.Stop();
-			if (ambientSource != null) Destroy(ambientSource);
-			ambientSource = tempSource;
-		}
-
 		// Stop ambient sound
 		public void StopAmbient()
 		{
@@ -443,6 +418,49 @@ namespace Snog.Audio
 		#endregion
 
 		#region Misc Methods
+		public IEnumerator CrossfadeAudio(
+			AudioSource fromSource,
+			AudioSource toSource,
+			AudioClip newClip,
+			float duration,
+			FadeCurveType curveType,
+			bool waitForNextBar = false,
+			float bpm = 120f // Optional, only for rhythm sync
+		)
+		{
+			if (newClip == null || fromSource == null || toSource == null)
+				yield break;
+
+			if (waitForNextBar)
+			{
+				float secondsPerBeat = 60f / bpm;
+				float timeToNextBar = secondsPerBeat * Mathf.Ceil(Time.time / secondsPerBeat) - Time.time;
+				yield return new WaitForSeconds(timeToNextBar);
+			}
+
+			toSource.clip = newClip;
+			toSource.volume = 0f;
+			toSource.Play();
+
+			float time = 0f;
+			float startVolume = fromSource.volume;
+
+			while (time < duration)
+			{
+				time += Time.deltaTime;
+				float t = Mathf.Clamp01(time / duration);
+				float curveT = ApplyCurve(t, curveType);
+
+				fromSource.volume = Mathf.Lerp(startVolume, 0f, curveT);
+				toSource.volume = Mathf.Lerp(0f, startVolume, curveT);
+
+				yield return null;
+			}
+
+			fromSource.Stop();
+			fromSource.volume = startVolume;
+		}
+
 		private void InitFXPool()
 		{
 			if (fxPool != null) return;
@@ -528,6 +546,19 @@ namespace Snog.Audio
 		public SoundLibrary GetSoundLibrary() => soundLibrary;
 		public MusicLibrary GetMusicLibrary() => musicLibrary;
 		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
+
+		private float ApplyCurve(float t, FadeCurveType type)
+		{
+			switch (type)
+			{
+				case FadeCurveType.EaseInOut:
+					return Mathf.SmoothStep(0f, 1f, t);
+				case FadeCurveType.Exponential:
+					return Mathf.Pow(t, 2f);
+				default:
+					return t; // Linear
+			}
+		}
 
 		public bool TryGetSoundNames(out string[] names)
 		{
