@@ -418,7 +418,7 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Pool Helpers (reflective)
+        #region Pool Helpers 
 
         private void TryDrawPoolStats(object pool)
         {
@@ -489,7 +489,7 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Editor Audio Preview (AudioUtil)
+        #region Editor Audio Preview
 
         private void PlayPreview(AudioClip clip)
         {
