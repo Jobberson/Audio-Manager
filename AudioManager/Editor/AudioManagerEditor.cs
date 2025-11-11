@@ -227,10 +227,19 @@ namespace Snog.Audio
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("📦 FX Pool:", manager.fxPool != null ? "Active" : "Not Initialized");
 
-                if (manager.fxPool != null)
+                EditorGUILayout.LabelField("🔁 Pool Size:", manager.fxPool.poolSize.ToString());
+                EditorGUILayout.LabelField("▶ Active Sources:", manager.fxPool.GetActiveSourceCount().ToString());
+                EditorGUILayout.LabelField("♻ Recycled Count:", manager.fxPool.GetRecycledCount().ToString());
+                EditorGUILayout.LabelField("🎯 Total Played:", manager.fxPool.GetTotalPlayed().ToString());
+
+                if (GUILayout.Button("Resize Pool to 20"))
                 {
-                    EditorGUILayout.LabelField("Pool Size:", manager.fxPool.poolSize.ToString());
-                    EditorGUILayout.LabelField("Active Sources:", manager.fxPool.GetActiveSourceCount().ToString());
+                    manager.fxPool.ResizePool(20);
+                }
+
+                if (GUILayout.Button("Recycle Inactive Sources"))
+                {
+                    manager.fxPool.RecycleInactiveSources();
                 }
 
                 EditorGUILayout.Space(5);
