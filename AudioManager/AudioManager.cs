@@ -562,6 +562,24 @@ namespace Snog.Audio
 		public MusicLibrary GetMusicLibrary() => musicLibrary;
 		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
 
+		public void SaveVolumeSettings()
+		{
+			PlayerPrefs.SetFloat("Volume_Master", masterVolume);
+			PlayerPrefs.SetFloat("Volume_Music", musicVolume);
+			PlayerPrefs.SetFloat("Volume_Ambient", ambientVolume);
+			PlayerPrefs.SetFloat("Volume_SFX", fxVolume);
+			PlayerPrefs.Save();
+		}
+
+		public void LoadVolumeSettings()
+		{
+			masterVolume = PlayerPrefs.GetFloat("Volume_Master", 1f);
+			musicVolume = PlayerPrefs.GetFloat("Volume_Music", 1f);
+			ambientVolume = PlayerPrefs.GetFloat("Volume_Ambient", 1f);
+			fxVolume = PlayerPrefs.GetFloat("Volume_SFX", 1f);
+			SetChannelVolumes();
+		}
+
 		private AudioMixerSnapshot GetSnapshot(SnapshotType type)
 		{
 			return type switch

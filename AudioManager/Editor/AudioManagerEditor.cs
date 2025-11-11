@@ -247,6 +247,39 @@ namespace Snog.Audio
                 DrawMixerMeter("MusicVolume", "Music");
                 DrawMixerMeter("AmbientVolume", "Ambient");
                 DrawMixerMeter("FXVolume", "FX");
+
+                EditorGUILayout.Space(5);
+
+                EditorGUILayout.LabelField("🎚 Volume Controls", EditorStyles.boldLabel);
+
+                float masterVol = Mathf.Pow(10f, manager.GetMixerVolumeDB("MasterVolume") / 20f);
+                float musicVol = Mathf.Pow(10f, manager.GetMixerVolumeDB("MusicVolume") / 20f);
+                float ambientVol = Mathf.Pow(10f, manager.GetMixerVolumeDB("AmbientVolume") / 20f);
+                float fxVol = Mathf.Pow(10f, manager.GetMixerVolumeDB("FXVolume") / 20f);
+
+                float newMaster = EditorGUILayout.Slider("Master Volume", masterVol, 0f, 1f);
+                float newMusic = EditorGUILayout.Slider("Music Volume", musicVol, 0f, 1f);
+                float newAmbient = EditorGUILayout.Slider("Ambient Volume", ambientVol, 0f, 1f);
+                float newFX = EditorGUILayout.Slider("SFX Volume", fxVol, 0f, 1f);
+
+                if (newMaster != masterVol) manager.SetVolume(newMaster, AudioManager.AudioChannel.Master);
+                if (newMusic != musicVol) manager.SetVolume(newMusic, AudioManager.AudioChannel.Music);
+                if (newAmbient != ambientVol) manager.SetVolume(newAmbient, AudioManager.AudioChannel.Ambient);
+                if (newFX != fxVol) manager.SetVolume(newFX, AudioManager.AudioChannel.fx);
+                
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("💾 Save Volume Settings"))
+                {
+                    manager.SaveVolumeSettings();
+                }
+                if (GUILayout.Button("📥 Load Volume Settings"))
+                {
+                    manager.LoadVolumeSettings();
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.Space(10);
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
         }
