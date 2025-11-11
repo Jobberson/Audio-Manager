@@ -13,101 +13,101 @@ using UnityEditor;
 
 namespace Snog.Audio
 {
-    /// <summary>
-    /// Central audio manager: music, ambient, SFX (2D + pooled 3D).
-    /// Refactored for clarity, safety and asset-store readiness.
-    /// Keep this as a single instance (inherits from your existing Singleton&lt;T&gt;).
-    /// </summary>
-    [RequireComponent(typeof(SoundLibrary))]
-    [RequireComponent(typeof(MusicLibrary))]
-    [RequireComponent(typeof(AmbientLibrary))]
-    [DisallowMultipleComponent]
-    public class AudioManager : Singleton<AudioManager>
-    {
-        #region Nested Types & Constants
+	/// <summary>
+	/// Central audio manager: music, ambient, SFX (2D + pooled 3D).
+	/// Refactored for clarity, safety and asset-store readiness.
+	/// Keep this as a single instance (inherits from your existing Singleton&lt;T&gt;).
+	/// </summary>
+	[RequireComponent(typeof(SoundLibrary))]
+	[RequireComponent(typeof(MusicLibrary))]
+	[RequireComponent(typeof(AmbientLibrary))]
+	[DisallowMultipleComponent]
+	public class AudioManager : Singleton<AudioManager>
+	{
+		#region Nested Types & Constants
 
-        public enum FadeCurveType { Linear, EaseInOut, Exponential }
+     	public enum FadeCurveType { Linear, EaseInOut, Exponential }
 
-        public enum AudioChannel { Master, Music, Ambient, SFX }
+ 	 	public enum AudioChannel { Master, Music, Ambient, SFX }
 
-        public enum SnapshotType { Default, Combat, Stealth, Underwater }
+ 	 	public enum SnapshotType { Default, Combat, Stealth, Underwater }
 
-        private static class MixerParams
-        {
+ 	 	private static class MixerParams
+ 	 	{
 			public const string Master = "MasterVolume";
 			public const string Music = "MusicVolume";
 			public const string Ambient = "AmbientVolume";
 			public const string Sfx = "FXVolume";
-        }
+ 	 	}
 
-        private const float SILENCE_DB = -80f;
+ 	 	private const float SILENCE_DB = -80f;
 
 #if UNITY_EDITOR
-        private const float SFX_MAX_LENGTH = 30f;
-        private const float AMBIENT_MIN_LENGTH = 30f;
-        private const float MUSIC_MIN_LENGTH = 60f;
+ 	 	private const float SFX_MAX_LENGTH = 30f;
+ 	 	private const float AMBIENT_MIN_LENGTH = 30f;
+ 	 	private const float MUSIC_MIN_LENGTH = 60f;
 #endif
 
-        #endregion
+ 	 	#endregion
 
-        #region Inspector Fields
+ 	 	#region Inspector Fields
 
-        [Header("Paths")]
-        [Tooltip("Project-relative folder inside Assets used by Scan/Generate (e.g. Assets/Audio/).")]
-        [SerializeField] private string audioFolderPath = "Assets/Audio";
+ 	 	[Header("Paths")]
+ 	 	[Tooltip("Project-relative folder inside Assets used by Scan/Generate (e.g. Assets/Audio/).")]
+ 	 	[SerializeField] private string audioFolderPath = "Assets/Audio";
 
-        [Header("Volumes (0..1)")]
-        [Range(0f, 1f), SerializeField] private float masterVolume = 1f;
-        [Range(0f, 1f), SerializeField] private float musicVolume = 1f;
-        [Range(0f, 1f), SerializeField] private float ambientVolume = 1f;
-        [Range(0f, 1f), SerializeField] private float sfxVolume = 1f;
+ 	 	[Header("Volumes (0..1)")]
+ 	 	[Range(0f, 1f), SerializeField] private float masterVolume = 1f;
+ 	 	[Range(0f, 1f), SerializeField] private float musicVolume = 1f;
+ 	 	[Range(0f, 1f), SerializeField] private float ambientVolume = 1f;
+ 	 	[Range(0f, 1f), SerializeField] private float sfxVolume = 1f;
 
-        [Header("Looping")]
-        [SerializeField] private bool musicIsLooping = true;
-        [SerializeField] private bool ambientIsLooping = true;
+ 	 	[Header("Looping")]
+ 	 	[SerializeField] private bool musicIsLooping = true;
+ 	 	[SerializeField] private bool ambientIsLooping = true;
 
-        [Header("Mixers & Groups")]
-        [SerializeField] private AudioMixer mainMixer;
-        [SerializeField] private AudioMixerGroup musicGroup;
-        [SerializeField] private AudioMixerGroup ambientGroup;
-        [SerializeField] private AudioMixerGroup sfxGroup;
+ 	 	[Header("Mixers & Groups")]
+ 	 	[SerializeField] private AudioMixer mainMixer;
+ 	 	[SerializeField] private AudioMixerGroup musicGroup;
+ 	 	[SerializeField] private AudioMixerGroup ambientGroup;
+ 	 	[SerializeField] private AudioMixerGroup sfxGroup;
 
-        [Header("Snapshots")]
-        [SerializeField] private AudioMixerSnapshot defaultSnapshot;
-        [SerializeField] private AudioMixerSnapshot combatSnapshot;
-        [SerializeField] private AudioMixerSnapshot stealthSnapshot;
-        [SerializeField] private AudioMixerSnapshot underwaterSnapshot;
+ 	 	[Header("Snapshots")]
+ 	 	[SerializeField] private AudioMixerSnapshot defaultSnapshot;
+ 	 	[SerializeField] private AudioMixerSnapshot combatSnapshot;
+ 	 	[SerializeField] private AudioMixerSnapshot stealthSnapshot;
+ 	 	[SerializeField] private AudioMixerSnapshot underwaterSnapshot;
 
-        [Header("SFX Pool")]
-        [Tooltip("Pool used for spatialized SFX playback. If null, manager will create one at runtime.")]
-        [SerializeField] private AudioSourcePool sfxPool;
-        [SerializeField, Min(1)] private int poolSize = 10;
+ 	 	[Header("SFX Pool")]
+ 	 	[Tooltip("Pool used for spatialized SFX playback. If null, manager will create one at runtime.")]
+ 	 	[SerializeField] private AudioSourcePool sfxPool;
+ 	 	[SerializeField, Min(1)] private int poolSize = 10;
 
-        #endregion
+     	#endregion
 
-        #region Runtime State (private)
+ 	 	#region Runtime State (private)
 
-        // Libraries (required by RequireComponent)
-        private SoundLibrary soundLibrary;
-        private MusicLibrary musicLibrary;
-        private AmbientLibrary ambientLibrary;
+ 	 	// Libraries (required by RequireComponent)
+ 	 	private SoundLibrary soundLibrary;
+ 	 	private MusicLibrary musicLibrary;
+ 	 	private AmbientLibrary ambientLibrary;
 
-        // Playback sources (owned children)
-        private AudioSource musicSource;
-        private AudioSource ambientSource;
-        private AudioSource sfx2DSource;
+ 	 	// Playback sources (owned children)
+ 	 	private AudioSource musicSource;
+ 	 	private AudioSource ambientSource;
+ 	 	private AudioSource sfx2DSource;
 
-        // Temporary scan containers (editor only)
-        public List<AudioClip> scannedMusicClips = new List<AudioClip>();
-        public List<AudioClip> scannedAmbientClips = new List<AudioClip>();
-        public List<AudioClip> scannedSFXClips = new List<AudioClip>();
+ 	 	// Temporary scan containers (editor only)
+ 	 	public List<AudioClip> scannedMusicClips = new List<AudioClip>();
+ 	 	public List<AudioClip> scannedAmbientClips = new List<AudioClip>();
+ 	 	public List<AudioClip> scannedSFXClips = new List<AudioClip>();
 
-        #endregion
+ 	 	#endregion
 
-        #region Unity Lifecycle
+ 	 	#region Unity Lifecycle
 
-        protected override void Awake()
-        {
+ 	 	protected override void Awake()
+ 	 	{
 			base.Awake();
 
 			// Ensure library refs
@@ -273,8 +273,8 @@ namespace Snog.Audio
 			        var found = mainMixer.FindMatchingGroups(name);
 			        if (found != null && found.Length > 0)
 			        {
-						groupRef = found[0];
-						return;
+		groupRef = found[0];
+		return;
 			        }
 			    }
 			    catch { /* ignore weird names */ }
@@ -579,9 +579,9 @@ namespace Snog.Audio
 
 			    case AudioType.Ambient:
 			        if (ambientSource == null) yield break;
-			        ambientSource.clip = clip;
-			        ambientSource.loop = loop;
-			        ambientSource.outputAudioMixerGroup = ambientGroup;
+				       ambientSource.clip = clip;
+				       ambientSource.loop = loop;
+				       ambientSource.outputAudioMixerGroup = ambientGroup;
 			        if (fadeDuration > 0f)
 			        {
 						ambientSource.volume = 0f;
