@@ -14,26 +14,27 @@ using UnityEditor;
 
 namespace Snog.Audio
 {
-	public enum FadeCurveType
-	{
-		Linear,
-		EaseInOut,
-		Exponential
-	}
-
 	[RequireComponent(typeof(SoundLibrary))]
 	[RequireComponent(typeof(MusicLibrary))]
 	[RequireComponent(typeof(AmbientLibrary))]
 	public class AudioManager : Singleton<AudioManager>
 	{
 		#region Variables
+		public enum FadeCurveType
+		{
+			Linear,
+			EaseInOut,
+			Exponential
+		}
+
 		public enum AudioChannel
 		{
 			Master,
 			Music,
 			Ambient,
 			fx
-		};
+		}
+
 		public enum SnapshotType
 		{
 			Default,
@@ -417,13 +418,50 @@ namespace Snog.Audio
 		}
 		#endregion
 
+		#region Snapshot Controls
+		public IEnumerator BlendSnapshots(
+			SnapshotType from,
+			SnapshotType to,
+			float duration,
+			FadeCurveType curveType = FadeCurveType.Linear
+		)
+		{
+			AudioMixerSnapshot fromSnapshot = GetSnapshot(from);
+			AudioMixerSnapshot toSnapshot = GetSnapshot(to);
+
+			if (fromSnapshot == null || toSnapshot == null)
+			{
+				Debug.LogWarning("Snapshot not found.");
+				yield break;
+			}
+
+			float time = 0f;
+			while (time < duration)
+			{
+				time += Time.deltaTime;
+				float t = Mathf.Clamp01(time / duration);
+				float curveT = ApplyCurve(t, curveType);
+
+				AudioMixerSnapshot[] snapshots = new[] { fromSnapshot, toSnapshot };
+				float[] weights = new[] { 1f - curveT, curveT };
+
+				mainMixer.TransitionToSnapshots(snapshots, weights, 0f); // 0f = instant because we control the blend manually
+
+				yield return null;
+			}
+
+			toSnapshot.TransitionTo(0.01f); // finalize
+		}
+
+		#endregion
+
 		#region Misc Methods
 		public IEnumerator CrossfadeAudio(
 			AudioSource fromSource,
 			AudioSource toSource,
 			AudioClip newClip,
 			float duration,
-			FadeCurveType curveType,
+			FadeCurveType curveType = FadeCurveType.Linear,
 			bool waitForNextBar = false,
 			float bpm = 120f // Optional, only for rhythm sync
 		)
@@ -492,29 +530,6 @@ namespace Snog.Audio
 			}
 		}
 
-		// Snapshot Transitions
-		public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
-		{
-			switch (snapshot)
-			{
-				case SnapshotType.Default:
-					if (defaultSnapshot != null) defaultSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Combat:
-					if (combatSnapshot != null) combatSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Stealth:
-					if (stealthSnapshot != null) stealthSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Underwater:
-					if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
-					break;
-				default:
-					Debug.LogWarning($"Snapshot '{snapshot}' not found.", this);
-					break;
-			}
-		}
-
 		private void CreateAudioSources()
 		{
 			GameObject newfxSource = new("2D fx source");
@@ -546,6 +561,18 @@ namespace Snog.Audio
 		public SoundLibrary GetSoundLibrary() => soundLibrary;
 		public MusicLibrary GetMusicLibrary() => musicLibrary;
 		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
+
+		private AudioMixerSnapshot GetSnapshot(SnapshotType type)
+		{
+			return type switch
+			{
+				SnapshotType.Default => defaultSnapshot,
+				SnapshotType.Combat => combatSnapshot,
+				SnapshotType.Stealth => stealthSnapshot,
+				SnapshotType.Underwater => underwaterSnapshot,
+				_ => null
+			};
+		}
 
 		private float ApplyCurve(float t, FadeCurveType type)
 		{
@@ -998,7 +1025,5 @@ namespace Snog.Audio
 		}
 #endif
 		#endregion
-
-
 	}
 }

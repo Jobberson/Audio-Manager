@@ -42,7 +42,6 @@ namespace Snog.Audio
         {
             manager = (AudioManager)target;
             snapshotOptions = System.Enum.GetNames(typeof(AudioManager.SnapshotType));
-
             RefreshClipLists();
         }
 
@@ -204,8 +203,15 @@ namespace Snog.Audio
             if (showSnapshotSection)
             {
                 selectedSnapshotIndex = EditorGUILayout.Popup("Snapshot", selectedSnapshotIndex, snapshotOptions);
-                if (GUILayout.Button("🔀 Switch Snapshot"))
-                    manager.TransitionToSnapshot((AudioManager.SnapshotType)selectedSnapshotIndex, 1f);
+                if (GUILayout.Button("🔄 Blend Snapshots"))
+                {
+                    manager.StartCoroutine(manager.BlendSnapshots(
+                        AudioManager.SnapshotType.Default,
+                        AudioManager.SnapshotType.Combat,
+                        2f,
+                        FadeCurveType.EaseInOut
+                    ));
+                }
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
         }
