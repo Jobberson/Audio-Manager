@@ -551,161 +551,6 @@ namespace Snog.Audio
 		}
 		#endregion
 
-		#region Helper Methods
-		public bool MusicIsPlaying() => musicSource != null && musicSource.isPlaying;
-		public string GetCurrentMusicName() => musicSource != null && musicSource.clip != null ? musicSource.clip.name : "None";
-
-		public bool AmbientIsPlaying() => ambientSource != null && ambientSource.isPlaying;
-		public string GetCurrentAmbientName() => ambientSource != null && ambientSource.clip != null ? ambientSource.clip.name : "None";
-
-		public SoundLibrary GetSoundLibrary() => soundLibrary;
-		public MusicLibrary GetMusicLibrary() => musicLibrary;
-		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
-
-		public void SaveVolumeSettings()
-		{
-			PlayerPrefs.SetFloat("Volume_Master", masterVolume);
-			PlayerPrefs.SetFloat("Volume_Music", musicVolume);
-			PlayerPrefs.SetFloat("Volume_Ambient", ambientVolume);
-			PlayerPrefs.SetFloat("Volume_SFX", fxVolume);
-			PlayerPrefs.Save();
-		}
-
-		public void LoadVolumeSettings()
-		{
-			masterVolume = PlayerPrefs.GetFloat("Volume_Master", 1f);
-			musicVolume = PlayerPrefs.GetFloat("Volume_Music", 1f);
-			ambientVolume = PlayerPrefs.GetFloat("Volume_Ambient", 1f);
-			fxVolume = PlayerPrefs.GetFloat("Volume_SFX", 1f);
-			SetChannelVolumes();
-		}
-
-		private AudioMixerSnapshot GetSnapshot(SnapshotType type)
-		{
-			return type switch
-			{
-				SnapshotType.Default => defaultSnapshot,
-				SnapshotType.Combat => combatSnapshot,
-				SnapshotType.Stealth => stealthSnapshot,
-				SnapshotType.Underwater => underwaterSnapshot,
-				_ => null
-			};
-		}
-
-		private float ApplyCurve(float t, FadeCurveType type)
-		{
-			switch (type)
-			{
-				case FadeCurveType.EaseInOut:
-					return Mathf.SmoothStep(0f, 1f, t);
-				case FadeCurveType.Exponential:
-					return Mathf.Pow(t, 2f);
-				default:
-					return t; // Linear
-			}
-		}
-
-		public bool TryGetSoundNames(out string[] names)
-		{
-			if (soundLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = soundLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public bool TryGetMusicNames(out string[] names)
-		{
-			if (musicLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = musicLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public bool TryGetAmbientNames(out string[] names)
-		{
-			if (ambientLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = ambientLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public float GetMixerVolumeDB(string parameter)
-		{
-			if (mainMixer == null) return -80f;
-			if (mainMixer.GetFloat(parameter, out float value))
-				return value;
-			return -80f; // Silence
-		}
-
-		public void SetMixerParameter(string parameterName, float value)
-		{
-			if (mainMixer == null)
-			{
-				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.", this);
-				return;
-			}
-			if (!mainMixer.SetFloat(parameterName, value))
-			{
-				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
-			}
-		}
-
-		public float GetMixerParameter(string parameterName)
-		{
-			if (mainMixer == null)
-			{
-				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.", this);
-				return -1f;
-			}
-			if (mainMixer.GetFloat(parameterName, out float value))
-				return value;
-
-			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
-			return -1f;
-		}
-
-#if UNITY_EDITOR
-		private void OnValidate()
-		{
-			if (!Application.isPlaying)
-			{
-				if (mainMixer == null)
-				{
-					string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
-					if (guids.Length > 0)
-					{
-						string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-						mainMixer = AssetDatabase.LoadAssetAtPath<AudioMixer>(path);
-						Debug.Log($"Auto-assigned mainMixer: {mainMixer.name}");
-					}
-				}
-
-				if (mainMixer != null)
-				{
-					TryAssignMissingGroupsAndSnapshots();
-					EditorUtility.SetDirty(this);
-				}
-			}
-
-			soundLibrary = GetComponent<SoundLibrary>();
-			musicLibrary = GetComponent<MusicLibrary>();
-			ambientLibrary = GetComponent<AmbientLibrary>();
-		}
-#endif
-		#endregion
-
 		#region Folder Scan
 #if UNITY_EDITOR
 		private const float SFX_MAX_LENGTH = 30f;     // <= this -> SFX candidate
@@ -1040,6 +885,284 @@ namespace Snog.Audio
 			// remove invalid characters and trim
 			var clean = new string(raw.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
 			return clean.Trim().Replace(' ', '_').ToLower();
+		}
+#endif
+		#endregion
+
+		#region Helper Methods
+		public bool MusicIsPlaying() => musicSource != null && musicSource.isPlaying;
+		public string GetCurrentMusicName() => musicSource != null && musicSource.clip != null ? musicSource.clip.name : "None";
+
+		public bool AmbientIsPlaying() => ambientSource != null && ambientSource.isPlaying;
+		public string GetCurrentAmbientName() => ambientSource != null && ambientSource.clip != null ? ambientSource.clip.name : "None";
+
+		public SoundLibrary GetSoundLibrary() => soundLibrary;
+		public MusicLibrary GetMusicLibrary() => musicLibrary;
+		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
+
+		private IEnumerator FadeIn(AudioSource source, float targetVolume, float duration)
+		{
+			float time = 0f;
+			while (time < duration)
+			{
+				time += Time.deltaTime;
+				source.volume = Mathf.Lerp(0f, targetVolume, time / duration);
+				yield return null;
+			}
+			source.volume = targetVolume;
+		}
+
+		private IEnumerator FadeOut(AudioSource source, float duration)
+		{
+			float startVolume = source.volume;
+			float time = 0f;
+			while (time < duration)
+			{
+				time += Time.deltaTime;
+				source.volume = Mathf.Lerp(startVolume, 0f, time / duration);
+				yield return null;
+			}
+			source.Stop();
+			source.volume = startVolume; // Reset for next playback
+		}
+
+		private IEnumerator Crossfade(AudioSource fromSource, AudioSource toSource, AudioClip newClip, float duration)
+		{
+			if (newClip == null || fromSource == null || toSource == null)
+				yield break;
+
+			toSource.clip = newClip;
+			toSource.volume = 0f;
+			toSource.Play();
+
+			float time = 0f;
+			float startVolume = fromSource.volume;
+
+			while (time < duration)
+			{
+				time += Time.deltaTime;
+				float t = Mathf.Clamp01(time / duration);
+				fromSource.volume = Mathf.Lerp(startVolume, 0f, t);
+				toSource.volume = Mathf.Lerp(0f, startVolume, t);
+				yield return null;
+			}
+
+			fromSource.Stop();
+			fromSource.volume = startVolume;
+		}
+
+		public void SaveVolumeSettings()
+		{
+			PlayerPrefs.SetFloat("Volume_Master", masterVolume);
+			PlayerPrefs.SetFloat("Volume_Music", musicVolume);
+			PlayerPrefs.SetFloat("Volume_Ambient", ambientVolume);
+			PlayerPrefs.SetFloat("Volume_SFX", fxVolume);
+			PlayerPrefs.Save();
+		}
+
+		public void LoadVolumeSettings()
+		{
+			masterVolume = PlayerPrefs.GetFloat("Volume_Master", 1f);
+			musicVolume = PlayerPrefs.GetFloat("Volume_Music", 1f);
+			ambientVolume = PlayerPrefs.GetFloat("Volume_Ambient", 1f);
+			fxVolume = PlayerPrefs.GetFloat("Volume_SFX", 1f);
+			SetChannelVolumes();
+		}
+
+		public void LoadAndPlaySFXAsyncFromResources(string path, float volume = 1f, bool loop = false, float delay = 0f)
+		{
+			StartCoroutine(LoadAndPlayClipAsync(path, AudioType.SFX, volume, loop, delay));
+		}
+
+		public void LoadAndPlayMusicAsyncFromResources(string path, float volume = 1f, bool loop = true, float fadeDuration = 2f, float delay = 0f)
+		{
+			StartCoroutine(LoadAndPlayClipAsync(path, AudioType.Music, volume, loop, delay, fadeDuration));
+		}
+
+		public void LoadAndPlayAmbientAsyncFromResources(string path, float volume = 1f, bool loop = true, float fadeDuration = 2f, float delay = 0f)
+		{
+			StartCoroutine(LoadAndPlayClipAsync(path, AudioType.Ambient, volume, loop, delay, fadeDuration));
+		}
+
+		private IEnumerator LoadAndPlayClipAsync(string path, AudioType type, float volume, bool loop, float delay, float fadeDuration = 0f)
+		{
+			ResourceRequest request = Resources.LoadAsync<AudioClip>(path);
+			yield return request;
+
+			AudioClip clip = request.asset as AudioClip;
+			if (clip == null)
+			{
+				Debug.LogWarning($"Audio clip not found at path: {path}");
+				yield break;
+			}
+
+			if (delay > 0f)
+				yield return new WaitForSeconds(delay);
+
+			switch (type)
+			{
+				case AudioType.SFX:
+					fxPool.PlayClip(clip, Vector3.zero, volume * fxVolume * masterVolume);
+					break;
+
+				case AudioType.Music:
+					musicSource.clip = clip;
+					musicSource.loop = loop;
+					musicSource.outputAudioMixerGroup = musicGroup;
+					if (fadeDuration > 0f)
+					{
+						musicSource.volume = 0f;
+						musicSource.Play();
+						StartCoroutine(FadeIn(musicSource, volume * musicVolume * masterVolume, fadeDuration));
+					}
+					else
+					{
+						musicSource.volume = volume * musicVolume * masterVolume;
+						musicSource.Play();
+					}
+					break;
+
+				case AudioType.Ambient:
+					ambientSource.clip = clip;
+					ambientSource.loop = loop;
+					ambientSource.outputAudioMixerGroup = ambientGroup;
+					if (fadeDuration > 0f)
+					{
+						ambientSource.volume = 0f;
+						ambientSource.Play();
+						StartCoroutine(FadeIn(ambientSource, volume * ambientVolume * masterVolume, fadeDuration));
+					}
+					else
+					{
+						ambientSource.volume = volume * ambientVolume * masterVolume;
+						ambientSource.Play();
+					}
+					break;
+			}
+		}
+
+		private AudioMixerSnapshot GetSnapshot(SnapshotType type)
+		{
+			return type switch
+			{
+				SnapshotType.Default => defaultSnapshot,
+				SnapshotType.Combat => combatSnapshot,
+				SnapshotType.Stealth => stealthSnapshot,
+				SnapshotType.Underwater => underwaterSnapshot,
+				_ => null
+			};
+		}
+
+		private float ApplyCurve(float t, FadeCurveType type)
+		{
+			switch (type)
+			{
+				case FadeCurveType.EaseInOut:
+					return Mathf.SmoothStep(0f, 1f, t);
+				case FadeCurveType.Exponential:
+					return Mathf.Pow(t, 2f);
+				default:
+					return t; // Linear
+			}
+		}
+
+		public bool TryGetSoundNames(out string[] names)
+		{
+			if (soundLibrary == null)
+			{
+				names = null;
+				return false;
+			}
+
+			names = soundLibrary.GetAllClipNames();
+			return names != null && names.Length > 0;
+		}
+
+		public bool TryGetMusicNames(out string[] names)
+		{
+			if (musicLibrary == null)
+			{
+				names = null;
+				return false;
+			}
+
+			names = musicLibrary.GetAllClipNames();
+			return names != null && names.Length > 0;
+		}
+
+		public bool TryGetAmbientNames(out string[] names)
+		{
+			if (ambientLibrary == null)
+			{
+				names = null;
+				return false;
+			}
+
+			names = ambientLibrary.GetAllClipNames();
+			return names != null && names.Length > 0;
+		}
+
+		public float GetMixerVolumeDB(string parameter)
+		{
+			if (mainMixer == null) return -80f;
+			if (mainMixer.GetFloat(parameter, out float value))
+				return value;
+			return -80f; // Silence
+		}
+
+		public void SetMixerParameter(string parameterName, float value)
+		{
+			if (mainMixer == null)
+			{
+				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.", this);
+				return;
+			}
+			if (!mainMixer.SetFloat(parameterName, value))
+			{
+				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
+			}
+		}
+
+		public float GetMixerParameter(string parameterName)
+		{
+			if (mainMixer == null)
+			{
+				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.", this);
+				return -1f;
+			}
+			if (mainMixer.GetFloat(parameterName, out float value))
+				return value;
+
+			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
+			return -1f;
+		}
+
+#if UNITY_EDITOR
+		private void OnValidate()
+		{
+			if (!Application.isPlaying)
+			{
+				if (mainMixer == null)
+				{
+					string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
+					if (guids.Length > 0)
+					{
+						string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+						mainMixer = AssetDatabase.LoadAssetAtPath<AudioMixer>(path);
+						Debug.Log($"Auto-assigned mainMixer: {mainMixer.name}");
+					}
+				}
+
+				if (mainMixer != null)
+				{
+					TryAssignMissingGroupsAndSnapshots();
+					EditorUtility.SetDirty(this);
+				}
+			}
+
+			soundLibrary = GetComponent<SoundLibrary>();
+			musicLibrary = GetComponent<MusicLibrary>();
+			ambientLibrary = GetComponent<AmbientLibrary>();
 		}
 #endif
 		#endregion

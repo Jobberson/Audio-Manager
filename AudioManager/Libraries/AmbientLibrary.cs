@@ -81,6 +81,22 @@ namespace Snog.Audio.Libraries
             return ambientDictionary.Keys.OrderBy(k => k).ToArray();
         }
 
+        public IEnumerator LoadClipAsync(string path, System.Action<AudioClip> onLoaded)
+        {
+            ResourceRequest request = Resources.LoadAsync<AudioClip>(path);
+            yield return request;
+
+            AudioClip clip = request.asset as AudioClip;
+            if (clip == null)
+            {
+                Debug.LogWarning($"[AudioLibrary] Clip not found at path: {path}");
+                onLoaded?.Invoke(null);
+                yield break;
+            }
+
+            onLoaded?.Invoke(clip);
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Rebuild Ambient Dictionary (Editor)")]
         public void Editor_RebuildDictionary()
