@@ -21,7 +21,7 @@ namespace Snog.Audio.Layers
         public Vector2 pitchRange = new Vector2(1f, 1f);
     }
 
-    [CreateAssetMenu(fileName = "AmbientProfile", menuName = "AudioManager/AmbientProfile")]
+    [CreateAssetMenu(fileName = "AmbientProfile", menuName = "Snog/AudioManager/AmbientProfile")]
     public class AmbientProfile : ScriptableObject
     {
         [Header("Identification")]

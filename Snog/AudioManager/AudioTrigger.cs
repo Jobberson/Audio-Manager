@@ -30,9 +30,8 @@ public enum AudioAction
 
     // Crossfades
     CrossfadeAmbient,
-    // (Optional) CrossfadeMusic — implement when dual-source structure exists
 
-    // Mixer snapshots (optional convenience)
+    // Mixer snapshots 
     TransitionSnapshotDefault,
     TransitionSnapshotCombat,
     TransitionSnapshotStealth,
@@ -93,7 +92,7 @@ public class AudioTrigger : MonoBehaviour
         var manager = AudioManager.Instance;
         if (manager == null)
         {
-            Debug.LogWarning("[AudioTrigger] No AudioManager.Instance found.", this);
+            Debug.LogWarning("No AudioManager.Instance found.", this);
             return;
         }
 
@@ -112,7 +111,6 @@ public class AudioTrigger : MonoBehaviour
                 break;
         }
 
-        // Optional: snapshot utilities bound to action enum
         ExecuteSnapshotsIfRequested(manager);
     }
 
@@ -125,7 +123,9 @@ public class AudioTrigger : MonoBehaviour
                 if (sfxClip != null && sfxClip.clips != null && sfxClip.clips.Length > 0)
                 {
                     var clipToPlay = sfxClip.clips[Random.Range(0, sfxClip.clips.Length)];
-                    manager.GetSoundLibrary()?.Editor_RebuildDictionary(); // safe in editor; no-op in player
+#if Unity_Editor
+                    manager.GetSoundLibrary()?.Editor_RebuildDictionary(); 
+#endif
                     manager.PlaySound2D(sfxClip.soundName);
                 }
                 break;
@@ -142,7 +142,6 @@ public class AudioTrigger : MonoBehaviour
             }
 
             default:
-                // Non-SFX actions are ignored in SFX mode
                 break;
         }
     }
@@ -182,7 +181,6 @@ public class AudioTrigger : MonoBehaviour
             }
 
             default:
-                // Other actions ignored in Music mode
                 break;
         }
     }
@@ -231,7 +229,6 @@ public class AudioTrigger : MonoBehaviour
             }
 
             default:
-                // Other actions ignored in Ambient mode
                 break;
         }
     }
@@ -257,7 +254,6 @@ public class AudioTrigger : MonoBehaviour
                 break;
 
             default:
-                // Not a snapshot action
                 break;
         }
     }

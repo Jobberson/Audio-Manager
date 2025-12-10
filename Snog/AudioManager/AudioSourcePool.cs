@@ -5,15 +5,16 @@ using UnityEngine.Audio;
 
 public class AudioSourcePool : Singleton<AudioSourcePool>
 {
-    public static AudioSourcePool Instance { get; private set; }
     public int poolSize = 10;
     public AudioMixerGroup fxGroup;
 
     private readonly Queue<AudioSource> available = new();
     private readonly HashSet<AudioSource> inUse = new();
 
-    void Awake()
+    protected override void Awake()
     {
+        base.Awake();
+        
         for (int i = 0; i < poolSize; i++)
         {
             var go = new GameObject("PooledAudioSource");
@@ -31,7 +32,6 @@ public class AudioSourcePool : Singleton<AudioSourcePool>
         if (clip == null) return;
         if (available.Count == 0)
         {
-            // Option A: expand
             var go = new GameObject("PooledAudioSource");
             go.transform.parent = transform;
             var extra = go.AddComponent<AudioSource>();

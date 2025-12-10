@@ -1,8 +1,10 @@
-using UnityEditor;
+#if UNITY_EDITOR
 using UnityEngine;
 using System.Reflection;
 using Snog.Audio.Libraries;
 using Snog.Audio.Layers;
+
+using UnityEditor;
 
 namespace Snog.Audio
 {
@@ -35,7 +37,6 @@ namespace Snog.Audio
         private bool showInfoSection = true;
         private bool showUtilitiesSection = true;
 
-        // Reflection cache for AudioUtil (editor preview playback)
         private static System.Type audioUtilType;
         private static MethodInfo playPreviewMethod;
         private static MethodInfo stopAllPreviewMethod;
@@ -178,7 +179,6 @@ namespace Snog.Audio
             showAmbientSection = EditorGUILayout.BeginFoldoutHeaderGroup(showAmbientSection, "🌲 Ambient");
             if (showAmbientSection)
             {
-                // --- Existing single-clip ambient controls ---
                 EditorGUILayout.Space(4);
                 selectedAmbientIndex = EditorGUILayout.Popup("Ambient Clip", selectedAmbientIndex, ambientNames);
 
@@ -198,7 +198,6 @@ namespace Snog.Audio
                 if (GUILayout.Button("🌄 Fade Out Ambient"))
                     manager.StartCoroutine(manager.StopAmbientFade(fadeDuration));
 
-                // --- New: Layered Ambient Profiles ---
                 EditorGUILayout.Space(8);
                 EditorGUILayout.LabelField("🌲 Ambient Profiles (Layered)", EditorStyles.boldLabel);
 
@@ -214,7 +213,6 @@ namespace Snog.Audio
 
                     if (GUILayout.Button("🔀 Crossfade to Profile"))
                     {
-                        // Use the profile's default fade if available; fallback to inspector fadeDuration
                         float crossfade = profileToTest != null ? Mathf.Max(0f, profileToTest.defaultFade) : fadeDuration;
                         manager.StartCoroutine(manager.CrossfadeAmbientProfile(profileToTest, crossfade));
                     }
@@ -234,7 +232,6 @@ namespace Snog.Audio
                 }
                 EditorGUILayout.EndHorizontal();
 
-                // Optional: quick info about current profile
                 EditorGUILayout.Space(2);
                 if (manager.TryGetCurrentAmbientProfileName(out var currentProfile))
                 {
@@ -336,3 +333,4 @@ namespace Snog.Audio
         #endregion
     }
 }
+#endif

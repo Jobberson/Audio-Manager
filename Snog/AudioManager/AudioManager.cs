@@ -85,7 +85,7 @@ namespace Snog.Audio
 		{
 			base.Awake();
 
-			// Ensure library refs exist at runtime (OnValidate only runs in editor)
+			// Ensure library refs exist at runtime 
 			if (soundLibrary == null) soundLibrary = GetComponent<SoundLibrary>();
 			if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
 			if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
@@ -94,21 +94,19 @@ namespace Snog.Audio
 			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.", this);
 			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.", this);
 
-			// Try to auto-assign mixer/groups/snapshots (Editor-only search, runtime fallback)
+			// Try to auto-assign mixer/groups/snapshots 
+#if UNITY_EDITOR					
 			AutoAssignMixerAndGroups();
-
+#endif
 			// Create audio sources
 			CreateAudioSources();
 
-			// Assign groups (safe - group may be null)
+			// Assign groups
 			if (fxSource != null) fxSource.outputAudioMixerGroup = fxGroup;
 			if (musicSource != null) musicSource.outputAudioMixerGroup = musicGroup;
 			if (ambientSource != null) ambientSource.outputAudioMixerGroup = ambientGroup;
 
-			// Set volume on all the channels
 			SetChannelVolumes();
-
-			// Initialize 3D SFX pool
 			InitFXPool();
 		}
 		#endregion
@@ -116,7 +114,6 @@ namespace Snog.Audio
 		#region Auto-assign helpers
 		private void AutoAssignMixerAndGroups()
 		{
-			// If already set, nothing to do
 			if (mainMixer != null)
 			{
 				TryAssignMissingGroupsAndSnapshots();
@@ -144,7 +141,6 @@ namespace Snog.Audio
 				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}", this);
 			}
 #endif
-			// If we found a mixer, try to find groups and snapshots by common names
 			if (mainMixer != null)
 			{
 				TryAssignMissingGroupsAndSnapshots();
@@ -159,12 +155,10 @@ namespace Snog.Audio
 		{
 			if (mainMixer == null) return;
 
-			// Try to assign groups by common names (case-sensitive matching performed by FindMatchingGroups)
 			TryAssignGroup(ref musicGroup, new string[] { "Music", "Master/Music", "MusicGroup", "Music_Group" });
 			TryAssignGroup(ref ambientGroup, new string[] { "Ambient", "Master/Ambient", "AmbientGroup", "Ambience" });
 			TryAssignGroup(ref fxGroup, new string[] { "FX", "SFX", "Master/FX", "Master/SFX", "FXGroup" });
 
-			// Snapshots — try common snapshot names
 			if (defaultSnapshot == null) defaultSnapshot = mainMixer.FindSnapshot("Default");
 			if (combatSnapshot == null) combatSnapshot = mainMixer.FindSnapshot("Combat");
 			if (stealthSnapshot == null) stealthSnapshot = mainMixer.FindSnapshot("Stealth");
@@ -187,10 +181,9 @@ namespace Snog.Audio
 						return;
 					}
 				}
-				catch { /* FindMatchingGroups can throw if the name is weird — ignore and continue */ }
+				catch { }
 			}
 
-			// Fallback: try "Master" group if present
 			try
 			{
 				var master = mainMixer.FindMatchingGroups("Master");
@@ -254,7 +247,7 @@ namespace Snog.Audio
 		#endregion
 
 		#region Music controls
-		// Play music with delay. 0 = No delay
+		// Play music with delay.
 		public void PlayMusic(string musicName, float delay)
 		{
 			var clip = musicLibrary.GetClipFromName(musicName);
@@ -323,7 +316,7 @@ namespace Snog.Audio
 		#endregion
 
 		#region Ambient controls
-		// Play ambient sound with delay 0 = No delay
+		// Play ambient sound with delay
 		public void PlayAmbient(string ambientName, float delay)
 		{
 			var clip = ambientLibrary.GetClipFromName(ambientName);
@@ -380,7 +373,7 @@ namespace Snog.Audio
 			}
 
 			ambientSource.Stop();
-			ambientSource.volume = currentVolume; // Reset volume for next playback
+			ambientSource.volume = currentVolume;
 		}
 
 		// Crossfade ambient sound
@@ -553,7 +546,7 @@ namespace Snog.Audio
 		{
 			if (profile == null || profile.layers == null || profile.layers.Length == 0)
 			{
-				Debug.LogWarning("[AudioManager] AmbientProfile is empty or null.", this);
+				Debug.LogWarning("AmbientProfile is empty or null.", this);
 				return;
 			}
 
@@ -639,7 +632,6 @@ namespace Snog.Audio
 			poolObj.transform.parent = transform;
 			fxPool = poolObj.AddComponent<AudioSourcePool>();
 
-			// Try to call Initialize(int, AudioMixerGroup) if present (supports older/newer pool implementations)
 			MethodInfo initMethod = fxPool.GetType().GetMethod("Initialize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 			if (initMethod != null)
 			{
@@ -649,14 +641,12 @@ namespace Snog.Audio
 				}
 				catch
 				{
-					// fallback to direct assignment if initialize invocation fails
 					fxPool.fxGroup = fxGroup;
 					fxPool.poolSize = poolSize;
 				}
 			}
 			else
 			{
-				// fallback if Initialize not implemented
 				fxPool.fxGroup = fxGroup;
 				fxPool.poolSize = poolSize;
 			}
@@ -695,13 +685,13 @@ namespace Snog.Audio
 			GameObject newMusicSource = new("Music source");
 			musicSource = newMusicSource.AddComponent<AudioSource>();
 			newMusicSource.transform.parent = transform;
-			musicSource.loop = MusicIsLooping; // Music is looping
+			musicSource.loop = MusicIsLooping; 
 			musicSource.playOnAwake = false;
 
 			GameObject newAmbientsource = new("Ambient source");
 			ambientSource = newAmbientsource.AddComponent<AudioSource>();
 			newAmbientsource.transform.parent = transform;
-			ambientSource.loop = AmbientIsLooping; // Ambient sound is looping
+			ambientSource.loop = AmbientIsLooping; 
 			ambientSource.playOnAwake = false;
 		}
 		#endregion
@@ -722,7 +712,6 @@ namespace Snog.Audio
 			if (ambientLayerSources == null)
 				ambientLayerSources = new List<AudioSource>();
 
-			// Create missing sources
 			while (ambientLayerSources.Count < needed)
 			{
 				GameObject go = new GameObject($"Ambient Layer {ambientLayerSources.Count}");
@@ -731,12 +720,11 @@ namespace Snog.Audio
 				var src = go.AddComponent<AudioSource>();
 				src.playOnAwake = false;
 				src.loop = true;
-				src.outputAudioMixerGroup = ambientGroup; // respect your mixer routing
+				src.outputAudioMixerGroup = ambientGroup; 
 
 				ambientLayerSources.Add(src);
 			}
 
-			// Disable extra sources if any
 			for (int i = needed; i < ambientLayerSources.Count; i++)
 			{
 				ambientLayerSources[i].Stop();
@@ -862,13 +850,13 @@ namespace Snog.Audio
 
 			if (!selectedPath.StartsWith(Application.dataPath))
 			{
-				Debug.LogWarning("[AudioManager] Selected folder must be inside the project's Assets folder.");
+				Debug.LogWarning("Selected folder must be inside the project's Assets folder.");
 				return;
 			}
 
 			// Convert to project-relative path and normalize slashes
 			audioFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length).Replace("\\", "/").TrimEnd('/');
-			Debug.Log($"[AudioManager] audioFolderPath set to: {audioFolderPath}");
+			Debug.Log($"audioFolderPath set to: {audioFolderPath}");
 		}
 
 		/// <summary>
@@ -888,7 +876,7 @@ namespace Snog.Audio
 
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
+				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
@@ -937,7 +925,7 @@ namespace Snog.Audio
 			}
 
 			EditorUtility.ClearProgressBar();
-			Debug.Log($"[AudioManager] Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} sfx.");
+			Debug.Log($"Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} sfx.");
 		}
 
 		/// <summary>
@@ -963,7 +951,7 @@ namespace Snog.Audio
 		{
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
+				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
@@ -1083,7 +1071,7 @@ namespace Snog.Audio
 			AssetDatabase.SaveAssets();
 			AssetDatabase.Refresh();
 
-			Debug.Log($"[AudioManager] Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}");
+			Debug.Log($"Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}");
 		}
 
 		/// <summary>
@@ -1094,14 +1082,14 @@ namespace Snog.Audio
 		{
 			if (string.IsNullOrEmpty(audioFolderPath))
 			{
-				Debug.LogWarning("[AudioManager] audioFolderPath not set. Call SetAudioFolderPath() first.");
+				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
 				return;
 			}
 
 			string generatedFolder = audioFolderPath.TrimEnd('/') + "/GeneratedTracks";
 			if (!AssetDatabase.IsValidFolder(generatedFolder))
 			{
-				Debug.LogWarning("[AudioManager] GeneratedTracks folder not found. Run GenerateScriptableObjects() first.");
+				Debug.LogWarning("GeneratedTracks folder not found. Run GenerateScriptableObjects() first.");
 				return;
 			}
 
@@ -1115,7 +1103,7 @@ namespace Snog.Audio
 
 			if (musicLib == null || ambientLib == null || sfxLib == null)
 			{
-				Debug.LogWarning("[AudioManager] Missing one or more library components on this GameObject.");
+				Debug.LogWarning("Missing one or more library components on this GameObject.");
 				return;
 			}
 
@@ -1168,7 +1156,7 @@ namespace Snog.Audio
 			EditorUtility.SetDirty(sfxLib);
 			AssetDatabase.SaveAssets();
 
-			Debug.Log($"[AudioManager] Assigned to libraries — Music: {addedMusic}, Ambient: {addedAmbient}, SFX: {addedSfx}");
+			Debug.Log($"Assigned to libraries — Music: {addedMusic}, Ambient: {addedAmbient}, SFX: {addedSfx}");
 		}
 
 		/// <summary>
@@ -1183,7 +1171,5 @@ namespace Snog.Audio
 		}
 #endif
 		#endregion
-
-
 	}
 }

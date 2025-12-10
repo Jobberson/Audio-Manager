@@ -12,7 +12,7 @@ namespace Snog.Audio.Libraries
 {
     public class MusicLibrary : MonoBehaviour
     {
-        [Header("Music Clips (ScriptableObjects preferred)")]
+        [Header("ScriptableObject Music Clips")]
         public List<MusicTrack> tracks = new();
 
         private Dictionary<string, AudioClip> musicDictionary = new();
@@ -30,7 +30,6 @@ namespace Snog.Audio.Libraries
             BuildDictionary();
 
 #if UNITY_EDITOR
-            // Editor: also include any MusicTrack assets in project
             try
             {
                 string[] guids = AssetDatabase.FindAssets("t:MusicTrack");
@@ -82,7 +81,7 @@ namespace Snog.Audio.Libraries
         }
 
 #if UNITY_EDITOR
-        [ContextMenu("Rebuild Music Dictionary (Editor)")]
+        [ContextMenu("Rebuild Music Dictionary")]
         public void Editor_RebuildDictionary()
         {
             built = false;

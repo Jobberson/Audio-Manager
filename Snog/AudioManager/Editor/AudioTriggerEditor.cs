@@ -1,15 +1,14 @@
-
-using UnityEditor;
+#if UNITY_EDITOR
 using UnityEngine;
 using Snog.Audio;
 using Snog.Audio.Clips;
+using UnityEditor;
 
 [CustomEditor(typeof(AudioTrigger))]
 public class AudioTriggerEditor : Editor
 {
     private AudioTrigger trigger;
 
-    // Serialized properties
     private SerializedProperty tagToCompareProp;
     private SerializedProperty fireOnEnterProp;
     private SerializedProperty fireOnExitProp;
@@ -316,7 +315,6 @@ public class AudioTriggerEditor : Editor
             var type   = (AudioType)selectedAudioTypeProp.enumValueIndex;
             var action = (AudioAction)actionProp.enumValueIndex;
 
-            // Show delay only for "Play" style actions
             bool needsDelay =
                 (type == AudioType.SFX && (action == AudioAction.Play2D || action == AudioAction.Play3D)) ||
                 (type == AudioType.Music && action == AudioAction.Play) ||
@@ -349,7 +347,6 @@ public class AudioTriggerEditor : Editor
         }
     }
 
-    // ---------- Preview helpers ----------
     private void PlayPreviewSafe(AudioClip clip)
     {
         if (clip == null)
@@ -358,7 +355,6 @@ public class AudioTriggerEditor : Editor
             return;
         }
 
-        // Cache reflection lookups once
         if (audioUtilType == null)
         {
             audioUtilType       = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
@@ -368,8 +364,8 @@ public class AudioTriggerEditor : Editor
                 System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
         }
 
-        // Stop previous previews, then play
         stopAllPreviewMethod?.Invoke(null, null);
         playPreviewMethod?.Invoke(null, new object[] { clip, 0, false });
     }
 }
+#endif

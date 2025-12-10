@@ -3,7 +3,7 @@ using UnityEngine;
 using Snog.Audio;
 using Snog.Audio.Layers;
 
-[AddComponentMenu("Audio/Ambient Zone")]
+[AddComponentMenu("Snog/AudioManager/Ambient Zone")]
 public class AmbientZone : MonoBehaviour
 {
     [Header("Zone")]
