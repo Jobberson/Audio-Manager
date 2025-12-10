@@ -66,8 +66,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2e76bf93390d404e99dc5161b6f9bc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  clip: 
+  clip: concretereverb
   selectedAudioType: 0
   playDelay: 0
   playWithFade: 0
   fadeDuration: 2
+  TagToCompare: Player

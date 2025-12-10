@@ -116,23 +116,6 @@ namespace Snog.Audio.Libraries
             return soundDict.Keys.OrderBy(k => k).ToArray();
         }
 
-        public IEnumerator LoadClipAsync(string path, System.Action<AudioClip> onLoaded)
-        {
-            ResourceRequest request = Resources.LoadAsync<AudioClip>(path);
-            yield return request;
-
-            AudioClip clip = request.asset as AudioClip;
-            if (clip == null)
-            {
-                Debug.LogWarning($"[AudioLibrary] Clip not found at path: {path}");
-                onLoaded?.Invoke(null);
-                yield break;
-            }
-
-            onLoaded?.Invoke(clip);
-        }
-
-
 #if UNITY_EDITOR
         // editor utility: force rebuild and mark dirty so inspector refreshes
         [ContextMenu("Rebuild Sound Dictionary (Editor)")]
