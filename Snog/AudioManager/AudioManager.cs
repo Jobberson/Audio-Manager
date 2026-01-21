@@ -1,4 +1,5 @@
-﻿﻿using System;
+﻿﻿
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +20,7 @@ namespace Snog.Audio
     [RequireComponent(typeof(AmbientLibrary))]
     public sealed partial class AudioManager : Singleton<AudioManager>
     {
-        #region Public Types
+        #region Types
 
         public enum AudioChannel
         {
@@ -35,6 +36,22 @@ namespace Snog.Audio
             Combat,
             Stealth,
             Underwater
+        }
+
+        [Serializable]
+        private sealed class AmbientStackEntry
+        {
+            public int token;
+            public AmbientProfile profile;
+            public int priority;
+            public float fadeSeconds;
+        }
+
+        private sealed class ScoredEmitter
+        {
+            public AmbientEmitter emitter;
+            public float score;
+            public float targetVolume01;
         }
 
         #endregion
@@ -72,14 +89,30 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Ambient System
+        #region Ambient
 
-        [Header("Ambient System")]
-        [Tooltip("Maximum simultaneous ambient voices (AudioSources) used to render layers.")]
+        [Header("Ambient (Emitters)")]
+        [Tooltip("Maximum number of AmbientEmitters allowed to play simultaneously.")]
         [SerializeField] private int maxAmbientVoices = 16;
 
-        [Tooltip("Default fade used when no fade time is supplied by caller.")]
+        [Tooltip("Default fade time used by ambient operations when not specified.")]
         [SerializeField] private float defaultAmbientFade = 2f;
+
+        [Tooltip("How often the system re-scores emitters (seconds). Lower = more responsive, higher = cheaper.")]
+        [SerializeField] private float ambientRescoreInterval = 0.25f;
+
+        [Tooltip("If false, only the best emitter per AmbientTrack can play at a time.")]
+        [SerializeField] private bool allowMultipleEmittersPerTrack = true;
+
+        [Tooltip("Optional override for listener transform. If null, auto-detects AudioListener.")]
+        [SerializeField] private Transform listenerOverride;
+
+        #endregion
+
+        #region Editor Tools State (Option A partial uses this)
+
+        [Header("Folder Paths (Editor Tools)")]
+        [SerializeField] private string audioFolderPath;
 
         #endregion
 
@@ -91,20 +124,30 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Sources
+        #region Core Sources
 
         private AudioSource musicSource;
         private AudioSource fx2DSource;
 
         #endregion
 
-        #region Ambient Bus
+        #region Ambient Stack / Emitters
 
-        private AmbientBus ambientBus;
+        private readonly List<AmbientEmitter> emitters = new List<AmbientEmitter>();
+        private readonly List<AmbientStackEntry> ambientStack = new List<AmbientStackEntry>();
+
+        private Coroutine ambientLoopCo;
+        private int ambientTokenCounter = 1;
+
+        private float ambientCurrentFade = 0f;
+        private float ambientNextRescoreTime = 0f;
+
+        private readonly Dictionary<AmbientTrack, float> desiredVolumeByTrack = new Dictionary<AmbientTrack, float>();
+        private readonly Dictionary<AmbientTrack, int> desiredPriorityByTrack = new Dictionary<AmbientTrack, int>();
 
         #endregion
 
-        #region Unity Methods
+        #region Unity
 
         protected override void Awake()
         {
@@ -121,9 +164,9 @@ namespace Snog.Audio
             CreateCoreSources();
             ApplyMixerRouting();
             ApplyAllMixerVolumes();
-
             InitializeFxPoolIfNeeded();
-            InitializeAmbientBus();
+
+            StartAmbientLoopIfNeeded();
         }
 
         #endregion
@@ -161,9 +204,11 @@ namespace Snog.Audio
 
             fxPool = poolGO.AddComponent<AudioSourcePool>();
 
-            // Asset-store friendly: try to call Initialize if present, otherwise just assign fields.
-            // (Keeps this AudioManager standalone even if the pool changes.)
-            var init = fxPool.GetType().GetMethod("Initialize", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            var init = fxPool.GetType().GetMethod(
+                "Initialize",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
+            );
+
             if (init != null)
             {
                 init.Invoke(fxPool, new object[] { fxPoolSize, fxGroup });
@@ -175,21 +220,9 @@ namespace Snog.Audio
             }
         }
 
-        private void InitializeAmbientBus()
-        {
-            if (ambientBus != null) return;
-
-            GameObject go = new GameObject("Ambient Bus");
-            go.transform.parent = transform;
-
-            ambientBus = go.AddComponent<AmbientBus>();
-            ambientBus.Configure(ambientGroup, Mathf.Clamp(maxAmbientVoices, 1, 128));
-            ambientBus.SetGain(GetAmbientGain());
-        }
-
         #endregion
 
-        #region Mixer Volumes
+        #region Mixer Volumes / Snapshots
 
         private void ApplyAllMixerVolumes()
         {
@@ -197,24 +230,11 @@ namespace Snog.Audio
             SetVolume(musicVolume, AudioChannel.Music);
             SetVolume(ambientVolume, AudioChannel.Ambient);
             SetVolume(fxVolume, AudioChannel.FX);
-
-            if (ambientBus != null)
-            {
-                ambientBus.SetGain(GetAmbientGain());
-            }
-        }
-
-        private float GetAmbientGain()
-        {
-            return Mathf.Clamp01(masterVolume) * Mathf.Clamp01(ambientVolume);
         }
 
         public void SetVolume(float volume01, AudioChannel channel)
         {
-            if (mainMixer == null)
-            {
-                return;
-            }
+            if (mainMixer == null) return;
 
             float db = Mathf.Log10(Mathf.Clamp(volume01, 0.0001f, 1f)) * 20f;
 
@@ -228,7 +248,6 @@ namespace Snog.Audio
                     break;
                 case AudioChannel.Ambient:
                     mainMixer.SetFloat("AmbientVolume", db);
-                    if (ambientBus != null) ambientBus.SetGain(GetAmbientGain());
                     break;
                 case AudioChannel.FX:
                     mainMixer.SetFloat("FXVolume", db);
@@ -268,24 +287,20 @@ namespace Snog.Audio
 
         public void PlaySfx2D(string soundName)
         {
-            if (soundLibrary == null) return;
+            if (soundLibrary == null || fx2DSource == null) return;
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
-
-            if (fx2DSource == null) return;
 
             fx2DSource.PlayOneShot(clip, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
         }
 
         public void PlaySfx3D(string soundName, Vector3 position)
         {
-            if (soundLibrary == null) return;
+            if (soundLibrary == null || fxPool == null) return;
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
-
-            if (fxPool == null) return;
 
             fxPool.PlayClip(clip, position, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
         }
@@ -303,6 +318,9 @@ namespace Snog.Audio
 
             musicSource.loop = musicLoop;
             musicSource.clip = clip;
+
+            StopAllCoroutines();
+            ApplyMixerRouting();
 
             if (fadeIn > 0f)
             {
@@ -373,80 +391,306 @@ namespace Snog.Audio
 
         #region Ambient API
 
-        /// <summary>
-        /// Replace the entire ambient stack with a single profile (simple mode).
-        /// </summary>
-        public void SetAmbientProfile(AmbientProfile profile, float fade = -1f)
+        public void RegisterEmitter(AmbientEmitter emitter)
         {
-            InitializeAmbientBus();
+            if (emitter == null) return;
 
-            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
-            ambientBus.SetSingleProfile(profile, f);
-        }
-
-        /// <summary>
-        /// Clears all ambience (fades out whatever is active).
-        /// </summary>
-        public void ClearAmbient(float fade = -1f)
-        {
-            InitializeAmbientBus();
-
-            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
-            ambientBus.Clear(f);
-        }
-
-        /// <summary>
-        /// Push a profile onto the ambient stack. Higher priority wins voice allocation when budget is exceeded.
-        /// Returns a token you can store to pop later.
-        /// </summary>
-        public int PushAmbientProfile(AmbientProfile profile, int priority = 0, float fade = -1f)
-        {
-            InitializeAmbientBus();
-
-            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
-            return ambientBus.Push(profile, priority, f);
-        }
-
-        /// <summary>
-        /// Pops a previously pushed profile token.
-        /// </summary>
-        public void PopAmbientToken(int token, float fade = -1f)
-        {
-            InitializeAmbientBus();
-
-            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
-            ambientBus.Pop(token, f);
-        }
-
-        /// <summary>
-        /// Convenience: remove the last stack entry matching this profile.
-        /// </summary>
-        public void PopAmbientProfile(AmbientProfile profile, float fade = -1f)
-        {
-            InitializeAmbientBus();
-
-            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
-            ambientBus.PopProfile(profile, f);
-        }
-
-        /// <summary>
-        /// Debug helper.
-        /// </summary>
-        public bool TryGetCurrentAmbientStack(out int count)
-        {
-            if (ambientBus == null)
+            if (!emitters.Contains(emitter))
             {
-                count = 0;
-                return false;
+                emitters.Add(emitter);
             }
 
-            count = ambientBus.StackCount;
+            StartAmbientLoopIfNeeded();
+        }
+
+        public void UnregisterEmitter(AmbientEmitter emitter)
+        {
+            if (emitter == null) return;
+            emitters.Remove(emitter);
+        }
+
+        public void SetAmbientProfile(AmbientProfile profile, float fade = -1f)
+        {
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+
+            ambientStack.Clear();
+
+            if (profile != null)
+            {
+                AmbientStackEntry e = new AmbientStackEntry();
+                e.token = ambientTokenCounter++;
+                e.profile = profile;
+                e.priority = 0;
+                e.fadeSeconds = f;
+                ambientStack.Add(e);
+            }
+
+            ambientCurrentFade = f;
+            ForceRescoreNow();
+        }
+
+        public void ClearAmbient(float fade = -1f)
+        {
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+
+            ambientStack.Clear();
+            ambientCurrentFade = f;
+
+            ForceRescoreNow();
+        }
+
+        public int PushAmbientProfile(AmbientProfile profile, int priority = 0, float fade = -1f)
+        {
+            if (profile == null) return -1;
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+
+            AmbientStackEntry e = new AmbientStackEntry();
+            e.token = ambientTokenCounter++;
+            e.profile = profile;
+            e.priority = priority;
+            e.fadeSeconds = f;
+            ambientStack.Add(e);
+
+            ambientCurrentFade = f;
+            ForceRescoreNow();
+
+            return e.token;
+        }
+
+        public void PopAmbientToken(int token, float fade = -1f)
+        {
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+
+            for (int i = ambientStack.Count - 1; i >= 0; i--)
+            {
+                if (ambientStack[i].token == token)
+                {
+                    ambientStack.RemoveAt(i);
+                    break;
+                }
+            }
+
+            ambientCurrentFade = f;
+            ForceRescoreNow();
+        }
+
+        public void PopAmbientProfile(AmbientProfile profile, float fade = -1f)
+        {
+            if (profile == null) return;
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+
+            for (int i = ambientStack.Count - 1; i >= 0; i--)
+            {
+                if (ambientStack[i].profile == profile)
+                {
+                    ambientStack.RemoveAt(i);
+                    break;
+                }
+            }
+
+            ambientCurrentFade = f;
+            ForceRescoreNow();
+        }
+
+        public bool TryGetCurrentAmbientStack(out int count)
+        {
+            count = ambientStack.Count;
             return true;
+        }
+
+        private void StartAmbientLoopIfNeeded()
+        {
+            if (ambientLoopCo != null) return;
+            ambientLoopCo = StartCoroutine(AmbientLoopCo());
+        }
+
+        private IEnumerator AmbientLoopCo()
+        {
+            while (true)
+            {
+                CleanupEmitters();
+
+                if (Time.unscaledTime >= ambientNextRescoreTime)
+                {
+                    ApplyAmbientTargets();
+                    ambientNextRescoreTime = Time.unscaledTime + Mathf.Max(0.05f, ambientRescoreInterval);
+                }
+
+                float globalGain = Mathf.Clamp01(masterVolume) * Mathf.Clamp01(ambientVolume);
+
+                for (int i = 0; i < emitters.Count; i++)
+                {
+                    if (emitters[i] == null) continue;
+                    emitters[i].StepVolume(Time.deltaTime, ambientCurrentFade, globalGain);
+                }
+
+                yield return null;
+            }
+        }
+
+        private void ForceRescoreNow()
+        {
+            StartAmbientLoopIfNeeded();
+            ambientNextRescoreTime = 0f;
+        }
+
+        private void CleanupEmitters()
+        {
+            for (int i = emitters.Count - 1; i >= 0; i--)
+            {
+                if (emitters[i] == null)
+                {
+                    emitters.RemoveAt(i);
+                }
+            }
+        }
+
+        private Transform GetListenerTransform()
+        {
+            if (listenerOverride != null) return listenerOverride;
+
+            AudioListener listener = FindFirstObjectByType<AudioListener>();
+            if (listener != null) return listener.transform;
+
+            if (Camera.main != null) return Camera.main.transform;
+
+            return null;
+        }
+
+        private void ApplyAmbientTargets()
+        {
+            desiredVolumeByTrack.Clear();
+            desiredPriorityByTrack.Clear();
+
+            for (int s = 0; s < ambientStack.Count; s++)
+            {
+                AmbientStackEntry entry = ambientStack[s];
+                if (entry == null || entry.profile == null || entry.profile.layers == null) continue;
+
+                AmbientLayer[] layers = entry.profile.layers;
+
+                for (int i = 0; i < layers.Length; i++)
+                {
+                    AmbientLayer layer = layers[i];
+                    if (layer == null || layer.track == null || layer.track.clip == null) continue;
+
+                    float v = Mathf.Clamp01(layer.volume);
+
+                    if (!desiredVolumeByTrack.ContainsKey(layer.track))
+                    {
+                        desiredVolumeByTrack[layer.track] = v;
+                        desiredPriorityByTrack[layer.track] = entry.priority;
+                    }
+                    else
+                    {
+                        desiredVolumeByTrack[layer.track] = Mathf.Max(desiredVolumeByTrack[layer.track], v);
+                        desiredPriorityByTrack[layer.track] = Mathf.Max(desiredPriorityByTrack[layer.track], entry.priority);
+                    }
+                }
+            }
+
+            Transform listener = GetListenerTransform();
+            Vector3 listenerPos = listener != null ? listener.position : Vector3.zero;
+
+            List<ScoredEmitter> scored = new List<ScoredEmitter>(emitters.Count);
+
+            for (int i = 0; i < emitters.Count; i++)
+            {
+                AmbientEmitter em = emitters[i];
+                if (em == null || em.Track == null)
+                {
+                    continue;
+                }
+
+                if (!desiredVolumeByTrack.TryGetValue(em.Track, out float baseVol01))
+                {
+                    ScoredEmitter se = new ScoredEmitter();
+                    se.emitter = em;
+                    se.score = float.NegativeInfinity;
+                    se.targetVolume01 = 0f;
+                    scored.Add(se);
+                    continue;
+                }
+
+                int trackPriority = desiredPriorityByTrack.TryGetValue(em.Track, out int p) ? p : 0;
+
+                float dist = listener != null ? Vector3.Distance(listenerPos, em.transform.position) : 0f;
+                float audibility = 1f / (1f + dist);
+
+                float score = (trackPriority * 1000f) + (em.EmitterPriority * 100f) + (baseVol01 * 10f) + audibility;
+
+                ScoredEmitter sEntry = new ScoredEmitter();
+                sEntry.emitter = em;
+                sEntry.score = score;
+                sEntry.targetVolume01 = baseVol01;
+                scored.Add(sEntry);
+            }
+
+            scored.Sort((a, b) => b.score.CompareTo(a.score));
+
+            int cap = Mathf.Clamp(maxAmbientVoices, 1, 128);
+            HashSet<AmbientEmitter> allowed = new HashSet<AmbientEmitter>();
+
+            if (allowMultipleEmittersPerTrack)
+            {
+                for (int i = 0; i < scored.Count && allowed.Count < cap; i++)
+                {
+                    if (scored[i].score == float.NegativeInfinity) continue;
+                    allowed.Add(scored[i].emitter);
+                }
+            }
+            else
+            {
+                HashSet<AmbientTrack> usedTracks = new HashSet<AmbientTrack>();
+
+                for (int i = 0; i < scored.Count && allowed.Count < cap; i++)
+                {
+                    if (scored[i].score == float.NegativeInfinity) continue;
+
+                    AmbientTrack t = scored[i].emitter.Track;
+                    if (t == null) continue;
+
+                    if (usedTracks.Contains(t)) continue;
+
+                    usedTracks.Add(t);
+                    allowed.Add(scored[i].emitter);
+                }
+            }
+
+            for (int i = 0; i < scored.Count; i++)
+            {
+                AmbientEmitter em = scored[i].emitter;
+                if (em == null) continue;
+
+                if (allowed.Contains(em))
+                {
+                    em.EnsurePlaying(ambientGroup);
+                    em.SetTargetVolume01(scored[i].targetVolume01);
+                }
+                else
+                {
+                    em.SetTargetVolume01(0f);
+                }
+            }
+
+            // Any emitters not in scored list still need to be faded out if not desired
+            for (int i = 0; i < emitters.Count; i++)
+            {
+                AmbientEmitter em = emitters[i];
+                if (em == null) continue;
+
+                if (!allowed.Contains(em) && !desiredVolumeByTrack.ContainsKey(em.Track))
+                {
+                    em.SetTargetVolume01(0f);
+                }
+            }
         }
 
         #endregion
 
-        #region Clip Name Helpers 
+        #region Clip Name Helpers
 
         public bool TryGetSoundNames(out string[] names)
         {
@@ -468,7 +712,7 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Editor Auto-Assign 
+        #region Editor Auto-Assign
 
 #if UNITY_EDITOR
         private void AutoAssignMixerAndGroups_EditorOnly()
@@ -528,463 +772,6 @@ namespace Snog.Audio
             return null;
         }
 #endif
-
-        #endregion
-//
-//
-// ===========================================================================================
-//
-//
-        #region AmbientBus Implementation
-
-        private sealed class AmbientBus : MonoBehaviour
-        {
-            private sealed class StackEntry
-            {
-                public int token;
-                public AmbientProfile profile;
-                public int priority;
-            }
-
-            private struct LayerKey : IEquatable<LayerKey>
-            {
-                public int token;
-                public int layerIndex;
-
-                public bool Equals(LayerKey other)
-                {
-                    return token == other.token && layerIndex == other.layerIndex;
-                }
-
-                public override bool Equals(object obj)
-                {
-                    return obj is LayerKey other && Equals(other);
-                }
-
-                public override int GetHashCode()
-                {
-                    unchecked
-                    {
-                        return (token * 397) ^ layerIndex;
-                    }
-                }
-            }
-
-            private sealed class LayerState
-            {
-                public LayerKey key;
-                public AudioClip clip;
-                public bool loop;
-                public float spatialBlend;
-                public bool randomStart;
-                public Vector2 pitchRange;
-
-                public float baseVolume01;
-                public float targetVolume;
-                public float currentVolume;
-
-                public int priority;
-            }
-
-            private sealed class Voice
-            {
-                public AudioSource source;
-                public LayerKey boundKey;
-                public bool bound;
-            }
-
-            public int StackCount => stack.Count;
-
-            private AudioMixerGroup outputGroup;
-            private int voiceCap;
-            private float gain = 1f;
-
-            private readonly List<StackEntry> stack = new();
-            private readonly Dictionary<LayerKey, LayerState> layers = new();
-
-            private readonly List<Voice> voices = new();
-
-            private Coroutine transitionCo;
-            private int tokenCounter = 1;
-
-            public void Configure(AudioMixerGroup group, int maxVoices)
-            {
-                outputGroup = group;
-                voiceCap = Mathf.Clamp(maxVoices, 1, 128);
-                EnsureVoices(voiceCap);
-            }
-
-            public void SetGain(float newGain)
-            {
-                gain = Mathf.Clamp01(newGain);
-
-                for (int i = 0; i < voices.Count; i++)
-                {
-                    if (!voices[i].bound) continue;
-                    voices[i].source.volume = layers.TryGetValue(voices[i].boundKey, out var st) ? (st.currentVolume * gain) : 0f;
-                }
-            }
-
-            public void SetSingleProfile(AmbientProfile profile, float fade)
-            {
-                stack.Clear();
-                layers.Clear();
-
-                if (profile != null)
-                {
-                    var e = new StackEntry();
-                    e.token = tokenCounter++;
-                    e.profile = profile;
-                    e.priority = 0;
-                    stack.Add(e);
-                }
-
-                RebuildLayersFromStack();
-                StartTransition(fade);
-            }
-
-            public int Push(AmbientProfile profile, int priority, float fade)
-            {
-                if (profile == null)
-                {
-                    return -1;
-                }
-
-                var e = new StackEntry();
-                e.token = tokenCounter++;
-                e.profile = profile;
-                e.priority = priority;
-                stack.Add(e);
-
-                RebuildLayersFromStack();
-                StartTransition(fade);
-
-                return e.token;
-            }
-
-            public void Pop(int token, float fade)
-            {
-                for (int i = stack.Count - 1; i >= 0; i--)
-                {
-                    if (stack[i].token == token)
-                    {
-                        stack.RemoveAt(i);
-                        break;
-                    }
-                }
-
-                RebuildLayersFromStack();
-                StartTransition(fade);
-            }
-
-            public void PopProfile(AmbientProfile profile, float fade)
-            {
-                if (profile == null) return;
-
-                for (int i = stack.Count - 1; i >= 0; i--)
-                {
-                    if (stack[i].profile == profile)
-                    {
-                        stack.RemoveAt(i);
-                        break;
-                    }
-                }
-
-                RebuildLayersFromStack();
-                StartTransition(fade);
-            }
-
-            public void Clear(float fade)
-            {
-                stack.Clear();
-                RebuildLayersFromStack();
-                StartTransition(fade);
-            }
-
-            private void RebuildLayersFromStack()
-            {
-                // Build the "desired" set of layer states from stack.
-                // Keep existing LayerState objects where possible for smooth fades.
-                var desiredKeys = new HashSet<LayerKey>();
-
-                for (int s = 0; s < stack.Count; s++)
-                {
-                    var entry = stack[s];
-                    var profile = entry.profile;
-                    if (profile == null || profile.layers == null) continue;
-
-                    for (int i = 0; i < profile.layers.Length; i++)
-                    {
-                        AmbientLayer layer = profile.layers[i];
-                        if (layer == null || layer.track == null || layer.track.clip == null) continue;
-
-                        var key = new LayerKey { token = entry.token, layerIndex = i };
-                        desiredKeys.Add(key);
-
-                        if (!layers.TryGetValue(key, out LayerState st))
-                        {
-                            st = new LayerState();
-                            st.key = key;
-                            st.currentVolume = 0f;
-                            layers.Add(key, st);
-                        }
-
-                        st.clip = layer.track.clip;
-                        st.loop = layer.loop;
-                        st.spatialBlend = layer.spatialBlend;
-                        st.randomStart = layer.randomStartTime;
-                        st.pitchRange = layer.pitchRange;
-                        st.baseVolume01 = Mathf.Clamp01(layer.volume);
-                        st.priority = entry.priority;
-
-                        // Set desired target. Voice allocation happens later.
-                        st.targetVolume = st.baseVolume01;
-                    }
-                }
-
-                // Any existing layer not desired should fade out
-                var toFadeOut = new List<LayerKey>();
-
-                foreach (var kv in layers)
-                {
-                    if (!desiredKeys.Contains(kv.Key))
-                    {
-                        kv.Value.targetVolume = 0f;
-                        toFadeOut.Add(kv.Key);
-                    }
-                }
-            }
-
-            private void StartTransition(float fade)
-            {
-                if (transitionCo != null)
-                {
-                    StopCoroutine(transitionCo);
-                    transitionCo = null;
-                }
-
-                transitionCo = StartCoroutine(TransitionCo(Mathf.Max(0f, fade)));
-            }
-
-            private IEnumerator TransitionCo(float fade)
-            {
-                EnsureVoices(voiceCap);
-
-                // Choose which layers get voices (best N)
-                var chosen = ChooseTopLayers(voiceCap);
-
-                // Any layer not chosen should be forced to targetVolume 0 for this transition
-                var chosenSet = new HashSet<LayerKey>();
-                for (int i = 0; i < chosen.Count; i++)
-                {
-                    chosenSet.Add(chosen[i].key);
-                }
-
-                foreach (var kv in layers)
-                {
-                    if (!chosenSet.Contains(kv.Key))
-                    {
-                        kv.Value.targetVolume = 0f;
-                    }
-                    else
-                    {
-                        kv.Value.targetVolume = kv.Value.baseVolume01;
-                    }
-                }
-
-                // Bind chosen layers to voices
-                for (int i = 0; i < voices.Count; i++)
-                {
-                    if (i < chosen.Count)
-                    {
-                        BindVoice(voices[i], chosen[i]);
-                    }
-                    else
-                    {
-                        UnbindVoice(voices[i]);
-                    }
-                }
-
-                // Fade
-                if (fade <= 0f)
-                {
-                    SnapToTargets();
-                    CleanupSilentLayers();
-                    transitionCo = null;
-                    yield break;
-                }
-
-                float time = 0f;
-                while (time < fade)
-                {
-                    time += Time.deltaTime;
-                    float t = Mathf.Clamp01(time / fade);
-
-                    for (int i = 0; i < voices.Count; i++)
-                    {
-                        if (!voices[i].bound) continue;
-
-                        if (layers.TryGetValue(voices[i].boundKey, out LayerState st))
-                        {
-                            st.currentVolume = Mathf.Lerp(st.currentVolume, st.targetVolume, t);
-                            voices[i].source.volume = st.currentVolume * gain;
-                        }
-                    }
-
-                    yield return null;
-                }
-
-                SnapToTargets();
-                CleanupSilentLayers();
-                transitionCo = null;
-            }
-
-            private void SnapToTargets()
-            {
-                foreach (var kv in layers)
-                {
-                    kv.Value.currentVolume = kv.Value.targetVolume;
-                }
-
-                for (int i = 0; i < voices.Count; i++)
-                {
-                    if (!voices[i].bound)
-                    {
-                        voices[i].source.volume = 0f;
-                        continue;
-                    }
-
-                    if (layers.TryGetValue(voices[i].boundKey, out LayerState st))
-                    {
-                        voices[i].source.volume = st.currentVolume * gain;
-                        if (st.currentVolume <= 0f)
-                        {
-                            UnbindVoice(voices[i]);
-                        }
-                    }
-                    else
-                    {
-                        UnbindVoice(voices[i]);
-                    }
-                }
-            }
-
-            private void CleanupSilentLayers()
-            {
-                var remove = new List<LayerKey>();
-
-                foreach (var kv in layers)
-                {
-                    if (kv.Value.currentVolume <= 0.0001f && kv.Value.targetVolume <= 0.0001f)
-                    {
-                        remove.Add(kv.Key);
-                    }
-                }
-
-                for (int i = 0; i < remove.Count; i++)
-                {
-                    layers.Remove(remove[i]);
-                }
-            }
-
-            private List<LayerState> ChooseTopLayers(int count)
-            {
-                var list = new List<LayerState>(layers.Values);
-
-                list.Sort((a, b) =>
-                {
-                    int p = b.priority.CompareTo(a.priority);
-                    if (p != 0) return p;
-                    return b.baseVolume01.CompareTo(a.baseVolume01);
-                });
-
-                if (list.Count > count)
-                {
-                    list.RemoveRange(count, list.Count - count);
-                }
-
-                return list;
-            }
-
-            private void BindVoice(Voice voice, LayerState st)
-            {
-                if (voice.source == null) return;
-
-                bool needsRebind = !voice.bound || !voice.boundKey.Equals(st.key) || voice.source.clip != st.clip;
-
-                voice.bound = true;
-                voice.boundKey = st.key;
-
-                if (needsRebind)
-                {
-                    voice.source.outputAudioMixerGroup = outputGroup;
-                    voice.source.playOnAwake = false;
-
-                    voice.source.clip = st.clip;
-                    voice.source.loop = st.loop;
-                    voice.source.spatialBlend = st.spatialBlend;
-
-                    if (st.randomStart && voice.source.clip != null && voice.source.clip.length > 0f)
-                    {
-                        voice.source.time = UnityEngine.Random.Range(0f, voice.source.clip.length);
-                    }
-
-                    if (st.pitchRange.x != st.pitchRange.y)
-                    {
-                        voice.source.pitch = UnityEngine.Random.Range(st.pitchRange.x, st.pitchRange.y);
-                    }
-                    else
-                    {
-                        voice.source.pitch = st.pitchRange.x;
-                    }
-
-                    if (!voice.source.isPlaying)
-                    {
-                        voice.source.volume = st.currentVolume * gain;
-                        voice.source.Play();
-                    }
-                }
-            }
-
-            private void UnbindVoice(Voice voice)
-            {
-                if (voice.source == null) return;
-
-                voice.source.Stop();
-                voice.source.clip = null;
-                voice.source.volume = 0f;
-
-                voice.bound = false;
-            }
-
-            private void EnsureVoices(int needed)
-            {
-                needed = Mathf.Clamp(needed, 1, 128);
-
-                while (voices.Count < needed)
-                {
-                    GameObject go = new GameObject($"AmbientVoice_{voices.Count}");
-                    go.transform.parent = transform;
-
-                    AudioSource src = go.AddComponent<AudioSource>();
-                    src.playOnAwake = false;
-                    src.loop = true;
-                    src.volume = 0f;
-                    src.outputAudioMixerGroup = outputGroup;
-
-                    var v = new Voice();
-                    v.source = src;
-                    v.bound = false;
-
-                    voices.Add(v);
-                }
-
-                for (int i = needed; i < voices.Count; i++)
-                {
-                    UnbindVoice(voices[i]);
-                }
-            }
-        }
 
         #endregion
     }

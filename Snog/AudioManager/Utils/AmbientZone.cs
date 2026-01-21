@@ -22,7 +22,10 @@ public class AmbientZone : MonoBehaviour
     }
 
     [Header("Zone")]
+    [Tooltip("Which profile should be activated when the player enters this zone.")]
     [SerializeField] private AmbientProfile profile;
+
+    [Tooltip("Only colliders with this tag will trigger the zone.")]
     [SerializeField] private string tagToCompare = "Player";
 
     [Header("Mode")]
@@ -33,14 +36,27 @@ public class AmbientZone : MonoBehaviour
 
     [Header("Enter Behavior")]
     [SerializeField] private bool fadeOnEnter = true;
+
     [SerializeField] private float enterFadeDuration = 2f;
 
     [Header("Exit Behavior")]
+    [Tooltip(
+        "Replace mode:\n" +
+        "  None - do nothing\n" +
+        "  StopFade - ClearAmbient with exit fade\n" +
+        "  StopImmediate - ClearAmbient instantly\n\n" +
+        "Stack mode:\n" +
+        "  None - Pop token instantly\n" +
+        "  StopFade - Pop token with exit fade\n" +
+        "  StopImmediate - Pop token instantly"
+    )]
     [SerializeField] private ExitAction exitAction = ExitAction.None;
+
     [SerializeField] private float exitFadeDuration = 2f;
 
     [Header("Gizmos")]
     [SerializeField] private Color gizmoColor = new Color(0.2f, 0.7f, 0.4f, 0.25f);
+
     [SerializeField] private Color gizmoWireColor = new Color(0.2f, 0.7f, 0.4f, 1f);
 
     private readonly HashSet<Collider> inside = new HashSet<Collider>();
@@ -67,6 +83,7 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
+        // Only react on first entering collider (supports multi-collider characters)
         if (inside.Count > 1)
         {
             return;
@@ -85,12 +102,7 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
-        float fade = GetEnterFade();
-
-        if (!fadeOnEnter)
-        {
-            fade = 0f;
-        }
+        float fade = fadeOnEnter ? GetEnterFade() : 0f;
 
         switch (mode)
         {
@@ -101,7 +113,7 @@ public class AmbientZone : MonoBehaviour
             }
             case ZoneMode.Stack:
             {
-                // Prevent double-push if something odd happens
+                // Ensure we don't leak tokens if re-enter happens oddly
                 if (ambientToken >= 0)
                 {
                     manager.PopAmbientToken(ambientToken, 0f);
@@ -126,6 +138,7 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
+        // Only react when the last collider exits
         if (inside.Count > 0)
         {
             return;
@@ -137,30 +150,12 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
-        float fade = Mathf.Max(0f, exitFadeDuration);
-
-        switch (exitAction)
-        {
-            case ExitAction.None:
-            {
-                break;
-            }
-            case ExitAction.StopFade:
-            {
-                HandleExit(manager, fade);
-                break;
-            }
-            case ExitAction.StopImmediate:
-            {
-                HandleExit(manager, 0f);
-                break;
-            }
-        }
+        HandleExit(manager, exitAction);
     }
 
     private void OnDisable()
     {
-        // Safety: if zone is disabled while player is inside, pop/clear so ambience doesn't get stuck.
+        // Safety: if zone is disabled while player is inside, avoid leaving ambience stuck.
         if (inside.Count == 0)
         {
             return;
@@ -174,25 +169,66 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
-        HandleExit(manager, 0f);
+        // Disable should never leave stack entries around.
+        HandleExit(manager, ExitAction.StopImmediate);
     }
 
-    private void HandleExit(AudioManager manager, float fade)
+    private void HandleExit(AudioManager manager, ExitAction action)
     {
+        float fade = Mathf.Max(0f, exitFadeDuration);
+
         switch (mode)
         {
             case ZoneMode.Replace:
             {
-                manager.ClearAmbient(fade);
+                switch (action)
+                {
+                    case ExitAction.None:
+                    {
+                        // Do nothing
+                        break;
+                    }
+                    case ExitAction.StopFade:
+                    {
+                        manager.ClearAmbient(fade);
+                        break;
+                    }
+                    case ExitAction.StopImmediate:
+                    {
+                        manager.ClearAmbient(0f);
+                        break;
+                    }
+                }
                 break;
             }
             case ZoneMode.Stack:
             {
-                if (ambientToken >= 0)
+                if (ambientToken < 0)
                 {
-                    manager.PopAmbientToken(ambientToken, fade);
-                    ambientToken = -1;
+                    break;
                 }
+
+                switch (action)
+                {
+                    case ExitAction.None:
+                    {
+                        // Stack mode should always clean up its own token.
+                        manager.PopAmbientToken(ambientToken, 0f);
+                        break;
+                    }
+                    case ExitAction.StopFade:
+                    {
+                        manager.PopAmbientToken(ambientToken, fade);
+                        break;
+                    }
+                    case ExitAction.StopImmediate:
+                    {
+                        manager.PopAmbientToken(ambientToken, 0f);
+                        break;
+                    }
+                }
+
+                ambientToken = -1;
                 break;
             }
         }
@@ -258,4 +294,3 @@ public class AmbientZone : MonoBehaviour
         }
     }
 }
-``

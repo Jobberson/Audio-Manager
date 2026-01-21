@@ -4,6 +4,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
+using System.Collections.Generic;
 using Snog.Audio.Libraries;
 using Snog.Audio.Layers;
 
@@ -38,10 +39,14 @@ namespace Snog.Audio
         private bool showSfxSection = true;
         private bool showMusicSection = true;
         private bool showAmbientSection = true;
+        private bool showEmittersSection = true;
         private bool showSnapshotSection = true;
         private bool showInfoSection = true;
 
         private SerializedProperty audioFolderPathProp;
+
+        private AmbientEmitter[] cachedEmitters = new AmbientEmitter[0];
+        private int selectedEmitterIndex = 0;
 
         private static System.Type audioUtilType;
         private static MethodInfo playPreviewMethod;
@@ -55,6 +60,7 @@ namespace Snog.Audio
             audioFolderPathProp = serializedObject.FindProperty("audioFolderPath");
 
             RefreshClipLists();
+            RefreshEmitters();
         }
 
         private void RefreshClipLists()
@@ -80,6 +86,12 @@ namespace Snog.Audio
             }
         }
 
+        private void RefreshEmitters()
+        {
+            cachedEmitters = Object.FindObjectsOfType<AmbientEmitter>(true);
+            selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, Mathf.Max(0, cachedEmitters.Length - 1));
+        }
+
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
@@ -96,6 +108,7 @@ namespace Snog.Audio
             DrawSfxSection();
             DrawMusicSection();
             DrawAmbientSection();
+            DrawEmittersSection();
             DrawSnapshotSection();
             DrawInfoSection();
 
@@ -115,28 +128,43 @@ namespace Snog.Audio
                 {
                     EditorGUILayout.LabelField("Asset Tools", EditorStyles.boldLabel);
 
-                    if (GUILayout.Button(new GUIContent("📁 Set Root Audio Folder", "Choose a folder inside Assets")))
+                    using (new EditorGUI.DisabledScope(EditorApplication.isPlaying))
                     {
-                        manager.SetAudioFolderPath();
-                        serializedObject.Update();
-                    }
+                        if (GUILayout.Button(new GUIContent("📁 Set Root Audio Folder", "Choose a folder inside Assets")))
+                        {
+                            manager.SetAudioFolderPath();
+                            serializedObject.Update();
+                        }
 
-                    string folderValue = audioFolderPathProp != null ? audioFolderPathProp.stringValue : "(field not found)";
-                    EditorGUILayout.LabelField("Current Folder:", string.IsNullOrEmpty(folderValue) ? "Not set" : folderValue);
+                        string folderValue = audioFolderPathProp != null ? audioFolderPathProp.stringValue : "(field not found)";
+                        EditorGUILayout.LabelField("Current Folder:", string.IsNullOrEmpty(folderValue) ? "Not set" : folderValue);
+
+                        EditorGUILayout.Space(2);
+
+                        if (GUILayout.Button(new GUIContent("🔍 Scan → Generate → Assign", "Scans folder, generates ScriptableObjects, and assigns them into libraries")))
+                        {
+                            manager.ScanFolders();
+                            manager.GenerateScriptableObjects();
+                            manager.AssignToLibraries();
+
+                            RefreshClipLists();
+                            RefreshEmitters();
+                        }
+                    }
 
                     EditorGUILayout.Space(2);
 
-                    if (GUILayout.Button(new GUIContent("🔍 Scan → Generate → Assign", "Scans folder, generates ScriptableObjects, and assigns them into libraries")))
+                    using (new EditorGUILayout.HorizontalScope())
                     {
-                        manager.ScanFolders();
-                        manager.GenerateScriptableObjects();
-                        manager.AssignToLibraries();
-                        RefreshClipLists();
-                    }
+                        if (GUILayout.Button("🔄 Refresh Clip Lists"))
+                        {
+                            RefreshClipLists();
+                        }
 
-                    if (GUILayout.Button("🔄 Refresh Clip Lists"))
-                    {
-                        RefreshClipLists();
+                        if (GUILayout.Button("🔄 Refresh Emitters"))
+                        {
+                            RefreshEmitters();
+                        }
                     }
                 }
             }
@@ -152,26 +180,30 @@ namespace Snog.Audio
                 {
                     EditorGUILayout.Space(4);
 
-                    selectedSoundIndex = EditorGUILayout.Popup("SFX Name", selectedSoundIndex, soundNames);
-
-                    using (new EditorGUILayout.HorizontalScope())
+                    bool hasSfx = soundNames != null && soundNames.Length > 0 && soundNames[0] != "No SFX Found";
+                    using (new EditorGUI.DisabledScope(!hasSfx))
                     {
-                        if (GUILayout.Button("▶ Play 2D (Runtime)"))
+                        selectedSoundIndex = EditorGUILayout.Popup("SFX Name", selectedSoundIndex, soundNames);
+
+                        using (new EditorGUILayout.HorizontalScope())
                         {
-                            manager.PlaySfx2D(soundNames[selectedSoundIndex]);
+                            if (GUILayout.Button("▶ Play 2D (Runtime)"))
+                            {
+                                manager.PlaySfx2D(soundNames[selectedSoundIndex]);
+                            }
+
+                            if (GUILayout.Button("🎧 Preview (Editor)"))
+                            {
+                                PlayPreviewFromSoundName(soundNames[selectedSoundIndex]);
+                            }
                         }
 
-                        if (GUILayout.Button("🎧 Preview (Editor)"))
+                        soundPosition = EditorGUILayout.Vector3Field("3D Position", soundPosition);
+
+                        if (GUILayout.Button("📍 Play 3D (Runtime)"))
                         {
-                            PlayPreviewFromSoundName(soundNames[selectedSoundIndex]);
+                            manager.PlaySfx3D(soundNames[selectedSoundIndex], soundPosition);
                         }
-                    }
-
-                    soundPosition = EditorGUILayout.Vector3Field("3D Position", soundPosition);
-
-                    if (GUILayout.Button("📍 Play 3D (Runtime)"))
-                    {
-                        manager.PlaySfx3D(soundNames[selectedSoundIndex], soundPosition);
                     }
                 }
             }
@@ -187,28 +219,32 @@ namespace Snog.Audio
                 {
                     EditorGUILayout.Space(4);
 
-                    selectedMusicIndex = EditorGUILayout.Popup("Music Name", selectedMusicIndex, musicNames);
-
-                    playDelay = EditorGUILayout.FloatField("Delay (sec)", playDelay);
-                    musicFadeIn = EditorGUILayout.FloatField("Fade In (sec)", musicFadeIn);
-                    musicFadeOut = EditorGUILayout.FloatField("Fade Out (sec)", musicFadeOut);
-
-                    using (new EditorGUILayout.HorizontalScope())
+                    bool hasMusic = musicNames != null && musicNames.Length > 0 && musicNames[0] != "No Music Found";
+                    using (new EditorGUI.DisabledScope(!hasMusic))
                     {
-                        if (GUILayout.Button("▶ Play (Runtime)"))
+                        selectedMusicIndex = EditorGUILayout.Popup("Music Name", selectedMusicIndex, musicNames);
+
+                        playDelay = EditorGUILayout.FloatField("Delay (sec)", playDelay);
+                        musicFadeIn = EditorGUILayout.FloatField("Fade In (sec)", musicFadeIn);
+                        musicFadeOut = EditorGUILayout.FloatField("Fade Out (sec)", musicFadeOut);
+
+                        using (new EditorGUILayout.HorizontalScope())
                         {
-                            manager.PlayMusic(musicNames[selectedMusicIndex], playDelay, musicFadeIn);
+                            if (GUILayout.Button("▶ Play (Runtime)"))
+                            {
+                                manager.PlayMusic(musicNames[selectedMusicIndex], playDelay, musicFadeIn);
+                            }
+
+                            if (GUILayout.Button("🎧 Preview (Editor)"))
+                            {
+                                PlayPreviewFromMusicName(musicNames[selectedMusicIndex]);
+                            }
                         }
 
-                        if (GUILayout.Button("🎧 Preview (Editor)"))
+                        if (GUILayout.Button("⏹ Stop (Runtime)"))
                         {
-                            PlayPreviewFromMusicName(musicNames[selectedMusicIndex]);
+                            manager.StopMusic(musicFadeOut);
                         }
-                    }
-
-                    if (GUILayout.Button("⏹ Stop (Runtime)"))
-                    {
-                        manager.StopMusic(musicFadeOut);
                     }
                 }
             }
@@ -227,6 +263,7 @@ namespace Snog.Audio
                     fadeDuration = EditorGUILayout.FloatField("Fade (sec)", fadeDuration);
 
                     EditorGUILayout.LabelField("Replace Mode", EditorStyles.boldLabel);
+
                     ambientProfileReplace = (AmbientProfile)EditorGUILayout.ObjectField(
                         "Profile",
                         ambientProfileReplace,
@@ -279,6 +316,7 @@ namespace Snog.Audio
                     }
 
                     EditorGUILayout.Space(2);
+
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         EditorGUILayout.LabelField("Last Token:", lastAmbientToken.ToString());
@@ -290,6 +328,70 @@ namespace Snog.Audio
                                 manager.PopAmbientToken(lastAmbientToken, fadeDuration);
                                 lastAmbientToken = -1;
                             }
+                        }
+                    }
+                }
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+        }
+
+        private void DrawEmittersSection()
+        {
+            showEmittersSection = EditorGUILayout.BeginFoldoutHeaderGroup(showEmittersSection, "📡 Ambient Emitters (Scene)");
+            if (showEmittersSection)
+            {
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.Space(4);
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        EditorGUILayout.LabelField("Found:", cachedEmitters != null ? cachedEmitters.Length.ToString() : "0");
+                        if (GUILayout.Button("🔄 Refresh", GUILayout.Width(90)))
+                        {
+                            RefreshEmitters();
+                        }
+                    }
+
+                    if (cachedEmitters == null || cachedEmitters.Length == 0)
+                    {
+                        EditorGUILayout.HelpBox("No AmbientEmitter components found in the scene. Place AmbientEmitter objects to enable 3D ambience.", MessageType.Info);
+                        return;
+                    }
+
+                    string[] emitterLabels = new string[cachedEmitters.Length];
+                    for (int i = 0; i < cachedEmitters.Length; i++)
+                    {
+                        AmbientEmitter em = cachedEmitters[i];
+                        string name = em != null ? em.name : "(null)";
+                        string track = (em != null && em.Track != null) ? em.Track.trackName : "No Track";
+                        emitterLabels[i] = $"{name}  •  {track}";
+                    }
+
+                    selectedEmitterIndex = EditorGUILayout.Popup("Emitter", selectedEmitterIndex, emitterLabels);
+                    selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, cachedEmitters.Length - 1);
+
+                    AmbientEmitter selected = cachedEmitters[selectedEmitterIndex];
+                    using (new EditorGUI.DisabledScope(selected == null))
+                    {
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            if (GUILayout.Button("📌 Ping"))
+                            {
+                                EditorGUIUtility.PingObject(selected.gameObject);
+                                Selection.activeGameObject = selected.gameObject;
+                            }
+
+                            if (GUILayout.Button("🎧 Preview Clip"))
+                            {
+                                AudioClip clip = (selected != null && selected.Track != null) ? selected.Track.clip : null;
+                                PlayPreview(clip);
+                            }
+                        }
+
+                        if (selected != null && selected.Track == null)
+                        {
+                            EditorGUILayout.HelpBox("Selected emitter has no AmbientTrack assigned.", MessageType.Warning);
                         }
                     }
                 }
@@ -383,7 +485,7 @@ namespace Snog.Audio
 
         private void PlayPreviewFromSoundName(string soundName)
         {
-            var lib = manager.GetComponent<SoundLibrary>();
+            SoundLibrary lib = manager.GetComponent<SoundLibrary>();
             if (lib == null)
             {
                 Debug.LogWarning("SoundLibrary missing on AudioManager.");
@@ -396,7 +498,7 @@ namespace Snog.Audio
 
         private void PlayPreviewFromMusicName(string musicName)
         {
-            var lib = manager.GetComponent<MusicLibrary>();
+            MusicLibrary lib = manager.GetComponent<MusicLibrary>();
             if (lib == null)
             {
                 Debug.LogWarning("MusicLibrary missing on AudioManager.");
