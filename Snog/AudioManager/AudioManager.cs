@@ -319,7 +319,6 @@ namespace Snog.Audio
             musicSource.loop = musicLoop;
             musicSource.clip = clip;
 
-            StopAllCoroutines();
             ApplyMixerRouting();
 
             if (fadeIn > 0f)
