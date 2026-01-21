@@ -109,7 +109,7 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Editor Tools State (Option A partial uses this)
+        #region Editor Tools State 
 
         [Header("Folder Paths (Editor Tools)")]
         [SerializeField] private string audioFolderPath;

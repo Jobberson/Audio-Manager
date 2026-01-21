@@ -1,4 +1,3 @@
-
 #if UNITY_EDITOR
 
 using UnityEngine;
@@ -88,7 +87,7 @@ namespace Snog.Audio
 
         private void RefreshEmitters()
         {
-            cachedEmitters = Object.FindObjectsOfType<AmbientEmitter>(true);
+            cachedEmitters = FindObjectsByType<AmbientEmitter>(sortMode: FindObjectsSortMode.None);
             selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, Mathf.Max(0, cachedEmitters.Length - 1));
         }
 
@@ -356,42 +355,43 @@ namespace Snog.Audio
                     if (cachedEmitters == null || cachedEmitters.Length == 0)
                     {
                         EditorGUILayout.HelpBox("No AmbientEmitter components found in the scene. Place AmbientEmitter objects to enable 3D ambience.", MessageType.Info);
-                        return;
                     }
-
-                    string[] emitterLabels = new string[cachedEmitters.Length];
-                    for (int i = 0; i < cachedEmitters.Length; i++)
+                    else
                     {
-                        AmbientEmitter em = cachedEmitters[i];
-                        string name = em != null ? em.name : "(null)";
-                        string track = (em != null && em.Track != null) ? em.Track.trackName : "No Track";
-                        emitterLabels[i] = $"{name}  •  {track}";
-                    }
-
-                    selectedEmitterIndex = EditorGUILayout.Popup("Emitter", selectedEmitterIndex, emitterLabels);
-                    selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, cachedEmitters.Length - 1);
-
-                    AmbientEmitter selected = cachedEmitters[selectedEmitterIndex];
-                    using (new EditorGUI.DisabledScope(selected == null))
-                    {
-                        using (new EditorGUILayout.HorizontalScope())
+                        string[] emitterLabels = new string[cachedEmitters.Length];
+                        for (int i = 0; i < cachedEmitters.Length; i++)
                         {
-                            if (GUILayout.Button("📌 Ping"))
-                            {
-                                EditorGUIUtility.PingObject(selected.gameObject);
-                                Selection.activeGameObject = selected.gameObject;
-                            }
-
-                            if (GUILayout.Button("🎧 Preview Clip"))
-                            {
-                                AudioClip clip = (selected != null && selected.Track != null) ? selected.Track.clip : null;
-                                PlayPreview(clip);
-                            }
+                            AmbientEmitter em = cachedEmitters[i];
+                            string name = em != null ? em.name : "(null)";
+                            string track = (em != null && em.Track != null) ? em.Track.trackName : "No Track";
+                            emitterLabels[i] = $"{name}  •  {track}";
                         }
 
-                        if (selected != null && selected.Track == null)
+                        selectedEmitterIndex = EditorGUILayout.Popup("Emitter", selectedEmitterIndex, emitterLabels);
+                        selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, cachedEmitters.Length - 1);
+
+                        AmbientEmitter selected = cachedEmitters[selectedEmitterIndex];
+                        using (new EditorGUI.DisabledScope(selected == null))
                         {
-                            EditorGUILayout.HelpBox("Selected emitter has no AmbientTrack assigned.", MessageType.Warning);
+                            using (new EditorGUILayout.HorizontalScope())
+                            {
+                                if (GUILayout.Button("📌 Ping"))
+                                {
+                                    EditorGUIUtility.PingObject(selected.gameObject);
+                                    Selection.activeGameObject = selected.gameObject;
+                                }
+
+                                if (GUILayout.Button("🎧 Preview Clip"))
+                                {
+                                    AudioClip clip = (selected != null && selected.Track != null) ? selected.Track.clip : null;
+                                    PlayPreview(clip);
+                                }
+                            }
+
+                            if (selected != null && selected.Track == null)
+                            {
+                                EditorGUILayout.HelpBox("Selected emitter has no AmbientTrack assigned.", MessageType.Warning);
+                            }
                         }
                     }
                 }
