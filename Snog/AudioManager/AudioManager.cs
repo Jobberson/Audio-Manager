@@ -1,12 +1,12 @@
-﻿﻿using UnityEngine;
+﻿﻿using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 using UnityEngine.Audio;
 using Snog.Audio.Libraries;
 using Snog.Audio.Clips;
-using System.Reflection;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
+using Snog.Audio.Layers;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -14,1162 +14,978 @@ using UnityEditor;
 
 namespace Snog.Audio
 {
-	[RequireComponent(typeof(SoundLibrary))]
-	[RequireComponent(typeof(MusicLibrary))]
-	[RequireComponent(typeof(AmbientLibrary))]
-	public class AudioManager : Singleton<AudioManager>
-	{
-		#region Variables
-		public enum AudioChannel
-		{
-			Master,
-			Music,
-			Ambient,
-			fx
-		};
-		public enum SnapshotType
-		{
-			Default,
-			Combat,
-			Stealth,
-			Underwater
-		}
+    [RequireComponent(typeof(SoundLibrary))]
+    [RequireComponent(typeof(MusicLibrary))]
+    [RequireComponent(typeof(AmbientLibrary))]
+    public sealed partial class AudioManager : Singleton<AudioManager>
+    {
+        #region Public Types
 
-		[Header("Folder Paths")]
-		public string audioFolderPath;
+        public enum AudioChannel
+        {
+            Master,
+            Music,
+            Ambient,
+            FX
+        }
 
-		[Header("Volume")]
-		[SerializeField, Range(0, 1)] private float masterVolume = 1; // Overall volume
-		[SerializeField, Range(0, 1)] private float musicVolume = 1f; // Music volume
-		[SerializeField, Range(0, 1)] private float ambientVolume = 1; // Ambient volume
-		[SerializeField, Range(0, 1)] private float fxVolume = 1; // FX volume
+        public enum SnapshotType
+        {
+            Default,
+            Combat,
+            Stealth,
+            Underwater
+        }
 
-		[SerializeField] private bool MusicIsLooping = true;
-		[SerializeField] private bool AmbientIsLooping = true;
+        #endregion
 
-		[Header("Mixers")]
-		[SerializeField] private AudioMixer mainMixer;
-		[SerializeField] private AudioMixerGroup musicGroup;
-		[SerializeField] private AudioMixerGroup ambientGroup;
-		[SerializeField] private AudioMixerGroup fxGroup;
+        #region Mixer / Volumes
 
-		[Header("Snapshots")]
-		[SerializeField] private AudioMixerSnapshot defaultSnapshot;
-		[SerializeField] private AudioMixerSnapshot combatSnapshot;
-		[SerializeField] private AudioMixerSnapshot stealthSnapshot;
-		[SerializeField] private AudioMixerSnapshot underwaterSnapshot;
+        [Header("Mixer")]
+        [SerializeField] private AudioMixer mainMixer;
+        [SerializeField] private AudioMixerGroup musicGroup;
+        [SerializeField] private AudioMixerGroup ambientGroup;
+        [SerializeField] private AudioMixerGroup fxGroup;
 
-		[Header("SFX Pool")]
-		public AudioSourcePool fxPool;
-		[SerializeField] private int poolSize = 10;
+        [Header("Snapshots")]
+        [SerializeField] private AudioMixerSnapshot defaultSnapshot;
+        [SerializeField] private AudioMixerSnapshot combatSnapshot;
+        [SerializeField] private AudioMixerSnapshot stealthSnapshot;
+        [SerializeField] private AudioMixerSnapshot underwaterSnapshot;
 
-		[Header("Scanned Clips")]
-		public List<AudioClip> scannedMusicClips = new();
-		public List<AudioClip> scannedAmbientClips = new();
-		public List<AudioClip> scannedSFXClips = new();
+        [Header("Volumes (0..1)")]
+        [SerializeField, Range(0f, 1f)] private float masterVolume = 1f;
+        [SerializeField, Range(0f, 1f)] private float musicVolume = 1f;
+        [SerializeField, Range(0f, 1f)] private float ambientVolume = 1f;
+        [SerializeField, Range(0f, 1f)] private float fxVolume = 1f;
 
-		// Seperate audiosources
-		[SerializeField] private List<AudioSource> ambientLayerSources = new();
-		private AudioSource musicSource;
-		private AudioSource ambientSource;
-		private AudioSource fxSource;
+        #endregion
 
-		// Sound libraries. All your audio clips
-		private SoundLibrary soundLibrary;
-		private MusicLibrary musicLibrary;
-		private AmbientLibrary ambientLibrary;
-		#endregion
+        #region Music / FX
 
-		#region Unity Methods
-		protected override void Awake()
-		{
-			base.Awake();
+        [Header("Music")]
+        [SerializeField] private bool musicLoop = true;
 
-			// Ensure library refs exist at runtime 
-			if (soundLibrary == null) soundLibrary = GetComponent<SoundLibrary>();
-			if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
-			if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
+        [Header("3D FX Pool")]
+        [SerializeField] private int fxPoolSize = 10;
+        [SerializeField] private AudioSourcePool fxPool;
 
-			if (soundLibrary == null) Debug.LogWarning("SoundLibrary component missing on this GameObject.", this);
-			if (musicLibrary == null) Debug.LogWarning("MusicLibrary component missing on this GameObject.", this);
-			if (ambientLibrary == null) Debug.LogWarning("AmbientLibrary component missing on this GameObject.", this);
+        #endregion
 
-			// Try to auto-assign mixer/groups/snapshots 
-#if UNITY_EDITOR					
-			AutoAssignMixerAndGroups();
-#endif
-			// Create audio sources
-			CreateAudioSources();
+        #region Ambient System
 
-			// Assign groups
-			if (fxSource != null) fxSource.outputAudioMixerGroup = fxGroup;
-			if (musicSource != null) musicSource.outputAudioMixerGroup = musicGroup;
-			if (ambientSource != null) ambientSource.outputAudioMixerGroup = ambientGroup;
+        [Header("Ambient System")]
+        [Tooltip("Maximum simultaneous ambient voices (AudioSources) used to render layers.")]
+        [SerializeField] private int maxAmbientVoices = 16;
 
-			SetChannelVolumes();
-			InitFXPool();
-		}
-		#endregion
+        [Tooltip("Default fade used when no fade time is supplied by caller.")]
+        [SerializeField] private float defaultAmbientFade = 2f;
 
-		#region Auto-assign helpers
-		private void AutoAssignMixerAndGroups()
-		{
-			if (mainMixer != null)
-			{
-				TryAssignMissingGroupsAndSnapshots();
-				return;
-			}
+        #endregion
+
+        #region Libraries
+
+        private SoundLibrary soundLibrary;
+        private MusicLibrary musicLibrary;
+        private AmbientLibrary ambientLibrary;
+
+        #endregion
+
+        #region Sources
+
+        private AudioSource musicSource;
+        private AudioSource fx2DSource;
+
+        #endregion
+
+        #region Ambient Bus
+
+        private AmbientBus ambientBus;
+
+        #endregion
+
+        #region Unity Methods
+
+        protected override void Awake()
+        {
+            base.Awake();
+
+            soundLibrary = GetComponent<SoundLibrary>();
+            musicLibrary = GetComponent<MusicLibrary>();
+            ambientLibrary = GetComponent<AmbientLibrary>();
 
 #if UNITY_EDITOR
-			try
-			{
-				// Find the first AudioMixer asset in the project
-				string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
-				if (guids != null && guids.Length > 0)
-				{
-					string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-					var mixer = AssetDatabase.LoadAssetAtPath<AudioMixer>(path);
-					if (mixer != null)
-					{
-						mainMixer = mixer;
-						Debug.Log($"Auto-assigned mainMixer: {mixer.name}", this);
-					}
-				}
-			}
-			catch (System.Exception ex)
-			{
-				Debug.LogWarning($"AutoAssign mixer failed: {ex.Message}", this);
-			}
+            AutoAssignMixerAndGroups_EditorOnly();
 #endif
-			if (mainMixer != null)
-			{
-				TryAssignMissingGroupsAndSnapshots();
-			}
-			else
-			{
-				Debug.LogWarning("No AudioMixer assigned and none found automatically. Assign mainMixer manually in inspector or place a mixer asset in the project.", this);
-			}
-		}
-
-		private void TryAssignMissingGroupsAndSnapshots()
-		{
-			if (mainMixer == null) return;
-
-			TryAssignGroup(ref musicGroup, new string[] { "Music", "Master/Music", "MusicGroup", "Music_Group" });
-			TryAssignGroup(ref ambientGroup, new string[] { "Ambient", "Master/Ambient", "AmbientGroup", "Ambience" });
-			TryAssignGroup(ref fxGroup, new string[] { "FX", "SFX", "Master/FX", "Master/SFX", "FXGroup" });
-
-			if (defaultSnapshot == null) defaultSnapshot = mainMixer.FindSnapshot("Default");
-			if (combatSnapshot == null) combatSnapshot = mainMixer.FindSnapshot("Combat");
-			if (stealthSnapshot == null) stealthSnapshot = mainMixer.FindSnapshot("Stealth");
-			if (underwaterSnapshot == null) underwaterSnapshot = mainMixer.FindSnapshot("Underwater");
-		}
-
-		private void TryAssignGroup(ref AudioMixerGroup groupRef, string[] candidateNames)
-		{
-			if (groupRef != null || mainMixer == null) return;
-
-			foreach (var name in candidateNames)
-			{
-				try
-				{
-					var found = mainMixer.FindMatchingGroups(name);
-					if (found != null && found.Length > 0)
-					{
-						groupRef = found[0];
-						Debug.Log($"Auto-assigned group '{groupRef.name}' for candidate '{name}'.", this);
-						return;
-					}
-				}
-				catch { }
-			}
-
-			try
-			{
-				var master = mainMixer.FindMatchingGroups("Master");
-				if (master != null && master.Length > 0)
-				{
-					groupRef = master[0];
-					Debug.Log($"Fallback assigned group '{groupRef.name}'.", this);
-				}
-			}
-			catch { }
-		}
-		#endregion
-
-		#region Volume Controls
-		private void SetChannelVolumes()
-		{
-			SetVolume(masterVolume, AudioChannel.Master);
-			SetVolume(fxVolume, AudioChannel.fx);
-			SetVolume(musicVolume, AudioChannel.Music);
-			SetVolume(ambientVolume, AudioChannel.Ambient);
-		}
-
-		public void SetVolume(float volumePercent, AudioChannel channel)
-		{
-			if (mainMixer == null)
-			{
-				Debug.LogWarning("Cannot SetVolume: mainMixer is not assigned.", this);
-				return;
-			}
-
-			float volumeDB = Mathf.Log10(Mathf.Clamp(volumePercent, 0.0001f, 1f)) * 20;
-
-			switch (channel)
-			{
-				case AudioChannel.Master:
-					mainMixer.SetFloat("MasterVolume", volumeDB);
-					break;
-				case AudioChannel.fx:
-					mainMixer.SetFloat("FXVolume", volumeDB);
-					break;
-				case AudioChannel.Music:
-					mainMixer.SetFloat("MusicVolume", volumeDB);
-					break;
-				case AudioChannel.Ambient:
-					mainMixer.SetFloat("AmbientVolume", volumeDB);
-					break;
-			}
-		}
-	
-		public void SetAmbientLayerVolume(int index, float normalized)
-		{
-			if (index < 0 || index >= ambientLayerSources.Count) return;
-			ambientLayerSources[index].volume = Mathf.Clamp01(normalized) * ambientVolume * masterVolume;
-		}
-
-		public bool TryGetCurrentAmbientProfileName(out string name)
-		{
-			name = currentAmbientProfile != null ? currentAmbientProfile.profileName : "None";
-			return currentAmbientProfile != null;
-		}
-		#endregion
-
-		#region Music controls
-		// Play music with delay.
-		public void PlayMusic(string musicName, float delay)
-		{
-			var clip = musicLibrary.GetClipFromName(musicName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
-				return;
-			}
-			if (musicSource == null) return;
-			musicSource.clip = clip;
-			musicSource.PlayDelayed(delay);
-		}
-
-		// Play music fade in
-		public IEnumerator PlayMusicFade(string musicName, float duration)
-		{
-			if (musicSource == null) yield break;
-
-			float startVolume = 0;
-			float targetVolume = musicSource.volume;
-			float currentTime = 0;
-
-			var clip = musicLibrary.GetClipFromName(musicName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"Music clip '{musicName}' not found.", this);
-				yield break;
-			}
-			musicSource.clip = clip;
-			musicSource.Play();
-
-			while (currentTime < duration)
-			{
-				currentTime += Time.deltaTime;
-				musicSource.volume = Mathf.Lerp(startVolume, targetVolume, currentTime / duration);
-				yield return null;
-			}
-		}
-
-		// Stop music
-		public void StopMusic()
-		{
-			if (musicSource == null) return;
-			musicSource.Stop();
-		}
-
-		// Stop music fading out
-		public IEnumerator StopMusicFade(float duration)
-		{
-			if (musicSource == null) yield break;
-
-			float currentVolume = musicSource.volume;
-			float startVolume = musicSource.volume;
-			float targetVolume = 0;
-			float currentTime = 0;
-
-			while (currentTime < duration)
-			{
-				currentTime += Time.deltaTime;
-				musicSource.volume = Mathf.Lerp(startVolume, targetVolume, currentTime / duration);
-				yield return null;
-			}
-			musicSource.Stop();
-			musicSource.volume = currentVolume;
-		}
-		#endregion
-
-		#region Ambient controls
-		// Play ambient sound with delay
-		public void PlayAmbient(string ambientName, float delay)
-		{
-			var clip = ambientLibrary.GetClipFromName(ambientName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
-				return;
-			}
-			if (ambientSource == null) return;
-			ambientSource.clip = clip;
-			ambientSource.PlayDelayed(delay);
-		}
-
-		public IEnumerator PlayAmbientFade(string ambientName, float duration)
-		{
-			if (ambientSource == null) yield break;
-
-			float startVolume = 0;
-			float targetVolume = ambientSource.volume;
-			float currentTime = 0;
-
-			var clip = ambientLibrary.GetClipFromName(ambientName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"ambient clip '{ambientName}' not found.", this);
-				yield break;
-			}
-			ambientSource.clip = clip;
-			ambientSource.Play();
-
-			while (currentTime < duration)
-			{
-				currentTime += Time.deltaTime;
-				ambientSource.volume = Mathf.Lerp(startVolume, targetVolume, currentTime / duration);
-				yield return null;
-			}
-		}
-
-		// Stop ambient sound fading out
-		public IEnumerator StopAmbientFade(float duration)
-		{
-			if (ambientSource == null) yield break;
-
-			float currentVolume = ambientSource.volume;
-			float startVolume = ambientSource.volume;
-			float targetVolume = 0;
-			float currentTime = 0;
-
-			while (currentTime < duration)
-			{
-				currentTime += Time.deltaTime;
-				ambientSource.volume = Mathf.Lerp(startVolume, targetVolume, currentTime / duration);
-				yield return null;
-			}
-
-			ambientSource.Stop();
-			ambientSource.volume = currentVolume;
-		}
-
-		// Crossfade ambient sound
-		public IEnumerator CrossfadeAmbient(string newClipName, float duration)
-		{
-			AudioClip newClip = ambientLibrary.GetClipFromName(newClipName);
-			if (newClip == null) yield break;
-
-			AudioSource tempSource = gameObject.AddComponent<AudioSource>();
-			tempSource.clip = newClip;
-			tempSource.outputAudioMixerGroup = ambientGroup;
-			tempSource.loop = AmbientIsLooping;
-			tempSource.volume = 0;
-			tempSource.Play();
-
-			float time = 0;
-			float startVolume = ambientSource != null ? ambientSource.volume : 1f;
-
-			while (time < duration)
-			{
-				time += Time.deltaTime;
-				float t = time / duration;
-				if (ambientSource != null) ambientSource.volume = Mathf.Lerp(startVolume, 0, t);
-				tempSource.volume = Mathf.Lerp(0, startVolume, t);
-				yield return null;
-			}
-
-			if (ambientSource != null) ambientSource.Stop();
-			if (ambientSource != null) Destroy(ambientSource);
-			ambientSource = tempSource;
-		}
-
-		// Stop ambient sound
-		public void StopAmbient()
-		{
-			if (ambientSource == null) return;
-			ambientSource.Stop();
-		}
-		
-		public IEnumerator StopAmbientProfileFade(float duration)
-		{
-			duration = Mathf.Max(0f, duration);
-
-			float time = 0f;
-			var start = new float[ambientLayerSources.Count];
-
-			for (int i = 0; i < ambientLayerSources.Count; i++)
-			{
-				start[i] = ambientLayerSources[i].volume;
-			}
-
-			while (time < duration)
-			{
-				time += Time.deltaTime;
-				float t = duration <= 0f ? 1f : Mathf.Clamp01(time / duration);
-
-				for (int i = 0; i < ambientLayerSources.Count; i++)
-				{
-					ambientLayerSources[i].volume = Mathf.Lerp(start[i], 0f, t);
-				}
-
-				yield return null;
-			}
-
-			for (int i = 0; i < ambientLayerSources.Count; i++)
-			{
-				ambientLayerSources[i].Stop();
-				ambientLayerSources[i].clip = null;
-				ambientLayerSources[i].volume = 0f;
-			}
-
-			currentAmbientProfile = null;
-		}
-
-		public void StopAmbientProfile()
-		{
-			for (int i = 0; i < ambientLayerSources.Count; i++)
-			{
-				ambientLayerSources[i].Stop();
-				ambientLayerSources[i].clip = null;
-				ambientLayerSources[i].volume = 0f;
-			}
-			currentAmbientProfile = null;
-		}
-
-		public IEnumerator CrossfadeAmbientProfile(Snog.Audio.Layers.AmbientProfile next, float duration)
-		{
-			if (next == null || next.layers == null || next.layers.Length == 0)
-				yield break;
-
-			duration = Mathf.Max(0f, duration);
-
-			EnsureAmbientLayerSources(next.layers.Length);
-
-			for (int i = 0; i < next.layers.Length; i++)
-			{
-				var layer = next.layers[i];
-				var src = ambientLayerSources[i];
-
-				if (layer == null || layer.track == null || layer.track.clip == null)
-				{
-					src.Stop();
-					src.clip = null;
-					src.volume = 0f;
-					continue;
-				}
-
-				src.clip = layer.track.clip;
-				src.loop = layer.loop;
-				src.spatialBlend = layer.spatialBlend;
-
-				if (layer.randomStartTime && src.clip.length > 0f)
-					src.time = Random.Range(0f, src.clip.length);
-
-				src.pitch = (layer.pitchRange.x != layer.pitchRange.y)
-					? Random.Range(layer.pitchRange.x, layer.pitchRange.y)
-					: layer.pitchRange.x;
-
-				src.volume = 0f;
-				src.Play();
-			}
-
-			float time = 0f;
-			var fromVolumes = new List<float>(ambientLayerSources.Count);
-			var toVolumes   = new List<float>(ambientLayerSources.Count);
-
-			for (int i = 0; i < ambientLayerSources.Count; i++)
-			{
-				float targetTo = 0f;
-				if (i < next.layers.Length && next.layers[i] != null)
-				{
-					targetTo = Mathf.Clamp01(next.layers[i].volume) * ambientVolume * masterVolume;
-				}
-				toVolumes.Add(targetTo);
-
-				float from = ambientLayerSources[i].clip != null ? ambientLayerSources[i].volume : 0f;
-				fromVolumes.Add(from);
-			}
-
-			// Fade
-			while (time < duration)
-			{
-				time += Time.deltaTime;
-				float t = duration <= 0f ? 1f : Mathf.Clamp01(time / duration);
-
-				for (int i = 0; i < ambientLayerSources.Count; i++)
-				{
-					float from = fromVolumes[i];
-					float to   = toVolumes[i];
-
-					ambientLayerSources[i].volume = Mathf.Lerp(from, to, t);
-				}
-
-				yield return null;
-			}
-
-			for (int i = 0; i < ambientLayerSources.Count; i++)
-			{
-				if (toVolumes[i] <= 0f)
-				{
-					ambientLayerSources[i].Stop();
-					ambientLayerSources[i].clip = null;
-				}
-			}
-
-			currentAmbientProfile = next;
-		}
-
-		public void PlayAmbientProfile(Snog.Audio.Layers.AmbientProfile profile)
-		{
-			if (profile == null || profile.layers == null || profile.layers.Length == 0)
-			{
-				Debug.LogWarning("AmbientProfile is empty or null.", this);
-				return;
-			}
-
-			EnsureAmbientLayerSources(profile.layers.Length);
-
-			for (int i = 0; i < profile.layers.Length; i++)
-			{
-				var layer = profile.layers[i];
-				var src = ambientLayerSources[i];
-
-				if (layer == null || layer.track == null || layer.track.clip == null)
-				{
-					src.Stop();
-					src.clip = null;
-					src.volume = 0f;
-					continue;
-				}
-
-				src.clip = layer.track.clip;
-				src.loop = layer.loop;
-				src.spatialBlend = layer.spatialBlend;
-
-				// Random start, random pitch
-				if (layer.randomStartTime && src.clip.length > 0f)
-				{
-					src.time = Random.Range(0f, src.clip.length);
-				}
-				if (layer.pitchRange.x != layer.pitchRange.y)
-				{
-					src.pitch = Random.Range(layer.pitchRange.x, layer.pitchRange.y);
-				}
-				else
-				{
-					src.pitch = layer.pitchRange.x;
-				}
-
-				src.volume = Mathf.Clamp01(layer.volume) * ambientVolume * masterVolume;
-				src.Play();
-			}
-
-			currentAmbientProfile = profile;
-		}
-
-		#endregion
-
-		#region Sfx Controls
-		// FX Audio
-		public void PlaySound2D(string soundName)
-		{
-			var clip = soundLibrary.GetClipFromName(soundName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
-				return;
-			}
-			if (fxSource == null) return;
-			fxSource.PlayOneShot(clip, fxVolume * masterVolume);
-		}
-
-		public void PlaySound3D(string soundName, Vector3 soundPosition)
-		{
-			var clip = soundLibrary.GetClipFromName(soundName);
-			if (clip == null)
-			{
-				Debug.LogWarning($"Sound clip '{soundName}' not found.", this);
-				return;
-			}
-			if (fxPool == null)
-			{
-				Debug.LogWarning("FX Pool not initialized.", this);
-				return;
-			}
-			fxPool.PlayClip(clip, soundPosition, fxVolume * masterVolume);
-		}
-		#endregion
-
-		#region Misc Methods
-		private void InitFXPool()
-		{
-			if (fxPool != null) return;
-
-			GameObject poolObj = new("FX Pool");
-			poolObj.transform.parent = transform;
-			fxPool = poolObj.AddComponent<AudioSourcePool>();
-
-			MethodInfo initMethod = fxPool.GetType().GetMethod("Initialize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-			if (initMethod != null)
-			{
-				try
-				{
-					initMethod.Invoke(fxPool, new object[] { poolSize, fxGroup });
-				}
-				catch
-				{
-					fxPool.fxGroup = fxGroup;
-					fxPool.poolSize = poolSize;
-				}
-			}
-			else
-			{
-				fxPool.fxGroup = fxGroup;
-				fxPool.poolSize = poolSize;
-			}
-		}
-
-		// Snapshot Transitions
-		public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
-		{
-			switch (snapshot)
-			{
-				case SnapshotType.Default:
-					if (defaultSnapshot != null) defaultSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Combat:
-					if (combatSnapshot != null) combatSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Stealth:
-					if (stealthSnapshot != null) stealthSnapshot.TransitionTo(transitionTime);
-					break;
-				case SnapshotType.Underwater:
-					if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
-					break;
-				default:
-					Debug.LogWarning($"Snapshot '{snapshot}' not found.", this);
-					break;
-			}
-		}
-
-		private void CreateAudioSources()
-		{
-			GameObject newfxSource = new("2D fx source");
-			fxSource = newfxSource.AddComponent<AudioSource>();
-			newfxSource.transform.parent = transform;
-			fxSource.playOnAwake = false;
-
-			GameObject newMusicSource = new("Music source");
-			musicSource = newMusicSource.AddComponent<AudioSource>();
-			newMusicSource.transform.parent = transform;
-			musicSource.loop = MusicIsLooping; 
-			musicSource.playOnAwake = false;
-
-			GameObject newAmbientsource = new("Ambient source");
-			ambientSource = newAmbientsource.AddComponent<AudioSource>();
-			newAmbientsource.transform.parent = transform;
-			ambientSource.loop = AmbientIsLooping; 
-			ambientSource.playOnAwake = false;
-		}
-		#endregion
-
-		#region Helper Methods
-		public bool MusicIsPlaying() => musicSource != null && musicSource.isPlaying;
-		public string GetCurrentMusicName() => musicSource != null && musicSource.clip != null ? musicSource.clip.name : "None";
-
-		public bool AmbientIsPlaying() => ambientSource != null && ambientSource.isPlaying;
-		public string GetCurrentAmbientName() => ambientSource != null && ambientSource.clip != null ? ambientSource.clip.name : "None";
-
-		public SoundLibrary GetSoundLibrary() => soundLibrary;
-		public MusicLibrary GetMusicLibrary() => musicLibrary;
-		public AmbientLibrary GetAmbientLibrary() => ambientLibrary;
-
-		private void EnsureAmbientLayerSources(int needed)
-		{
-			if (ambientLayerSources == null)
-				ambientLayerSources = new List<AudioSource>();
-
-			while (ambientLayerSources.Count < needed)
-			{
-				GameObject go = new GameObject($"Ambient Layer {ambientLayerSources.Count}");
-				go.transform.parent = transform;
-
-				var src = go.AddComponent<AudioSource>();
-				src.playOnAwake = false;
-				src.loop = true;
-				src.outputAudioMixerGroup = ambientGroup; 
-
-				ambientLayerSources.Add(src);
-			}
-
-			for (int i = needed; i < ambientLayerSources.Count; i++)
-			{
-				ambientLayerSources[i].Stop();
-				ambientLayerSources[i].clip = null;
-				ambientLayerSources[i].volume = 0f;
-			}
-		}
-
-		public bool TryGetSoundNames(out string[] names)
-		{
-			if (soundLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = soundLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public bool TryGetMusicNames(out string[] names)
-		{
-			if (musicLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = musicLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public bool TryGetAmbientNames(out string[] names)
-		{
-			if (ambientLibrary == null)
-			{
-				names = null;
-				return false;
-			}
-
-			names = ambientLibrary.GetAllClipNames();
-			return names != null && names.Length > 0;
-		}
-
-		public float GetMixerVolumeDB(string parameter)
-		{
-			if (mainMixer == null) return -80f;
-			if (mainMixer.GetFloat(parameter, out float value))
-				return value;
-			return -80f; // Silence
-		}
-
-		public void SetMixerParameter(string parameterName, float value)
-		{
-			if (mainMixer == null)
-			{
-				Debug.LogWarning($"Mixer not assigned; cannot set '{parameterName}'.", this);
-				return;
-			}
-			if (!mainMixer.SetFloat(parameterName, value))
-			{
-				Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
-			}
-		}
-
-		public float GetMixerParameter(string parameterName)
-		{
-			if (mainMixer == null)
-			{
-				Debug.LogWarning($"Mixer not assigned; cannot read '{parameterName}'.", this);
-				return -1f;
-			}
-			if (mainMixer.GetFloat(parameterName, out float value))
-				return value;
-
-			Debug.LogWarning($"Mixer parameter '{parameterName}' not found.", this);
-			return -1f;
-		}
+
+            CreateCoreSources();
+            ApplyMixerRouting();
+            ApplyAllMixerVolumes();
+
+            InitializeFxPoolIfNeeded();
+            InitializeAmbientBus();
+        }
+
+        #endregion
+
+        #region Initialization
+
+        private void CreateCoreSources()
+        {
+            GameObject fxGO = new GameObject("FX 2D");
+            fxGO.transform.parent = transform;
+            fx2DSource = fxGO.AddComponent<AudioSource>();
+            fx2DSource.playOnAwake = false;
+            fx2DSource.spatialBlend = 0f;
+
+            GameObject musicGO = new GameObject("Music");
+            musicGO.transform.parent = transform;
+            musicSource = musicGO.AddComponent<AudioSource>();
+            musicSource.playOnAwake = false;
+            musicSource.loop = musicLoop;
+            musicSource.spatialBlend = 0f;
+        }
+
+        private void ApplyMixerRouting()
+        {
+            if (fx2DSource != null) fx2DSource.outputAudioMixerGroup = fxGroup;
+            if (musicSource != null) musicSource.outputAudioMixerGroup = musicGroup;
+        }
+
+        private void InitializeFxPoolIfNeeded()
+        {
+            if (fxPool != null) return;
+
+            GameObject poolGO = new GameObject("FX Pool");
+            poolGO.transform.parent = transform;
+
+            fxPool = poolGO.AddComponent<AudioSourcePool>();
+
+            // Asset-store friendly: try to call Initialize if present, otherwise just assign fields.
+            // (Keeps this AudioManager standalone even if the pool changes.)
+            var init = fxPool.GetType().GetMethod("Initialize", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            if (init != null)
+            {
+                init.Invoke(fxPool, new object[] { fxPoolSize, fxGroup });
+            }
+            else
+            {
+                fxPool.poolSize = fxPoolSize;
+                fxPool.fxGroup = fxGroup;
+            }
+        }
+
+        private void InitializeAmbientBus()
+        {
+            if (ambientBus != null) return;
+
+            GameObject go = new GameObject("Ambient Bus");
+            go.transform.parent = transform;
+
+            ambientBus = go.AddComponent<AmbientBus>();
+            ambientBus.Configure(ambientGroup, Mathf.Clamp(maxAmbientVoices, 1, 128));
+            ambientBus.SetGain(GetAmbientGain());
+        }
+
+        #endregion
+
+        #region Mixer Volumes
+
+        private void ApplyAllMixerVolumes()
+        {
+            SetVolume(masterVolume, AudioChannel.Master);
+            SetVolume(musicVolume, AudioChannel.Music);
+            SetVolume(ambientVolume, AudioChannel.Ambient);
+            SetVolume(fxVolume, AudioChannel.FX);
+
+            if (ambientBus != null)
+            {
+                ambientBus.SetGain(GetAmbientGain());
+            }
+        }
+
+        private float GetAmbientGain()
+        {
+            return Mathf.Clamp01(masterVolume) * Mathf.Clamp01(ambientVolume);
+        }
+
+        public void SetVolume(float volume01, AudioChannel channel)
+        {
+            if (mainMixer == null)
+            {
+                return;
+            }
+
+            float db = Mathf.Log10(Mathf.Clamp(volume01, 0.0001f, 1f)) * 20f;
+
+            switch (channel)
+            {
+                case AudioChannel.Master:
+                    mainMixer.SetFloat("MasterVolume", db);
+                    break;
+                case AudioChannel.Music:
+                    mainMixer.SetFloat("MusicVolume", db);
+                    break;
+                case AudioChannel.Ambient:
+                    mainMixer.SetFloat("AmbientVolume", db);
+                    if (ambientBus != null) ambientBus.SetGain(GetAmbientGain());
+                    break;
+                case AudioChannel.FX:
+                    mainMixer.SetFloat("FXVolume", db);
+                    break;
+            }
+        }
+
+        public float GetMixerVolumeDB(string parameterName)
+        {
+            if (mainMixer == null) return -80f;
+            if (mainMixer.GetFloat(parameterName, out float v)) return v;
+            return -80f;
+        }
+
+        public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
+        {
+            switch (snapshot)
+            {
+                case SnapshotType.Default:
+                    if (defaultSnapshot != null) defaultSnapshot.TransitionTo(transitionTime);
+                    break;
+                case SnapshotType.Combat:
+                    if (combatSnapshot != null) combatSnapshot.TransitionTo(transitionTime);
+                    break;
+                case SnapshotType.Stealth:
+                    if (stealthSnapshot != null) stealthSnapshot.TransitionTo(transitionTime);
+                    break;
+                case SnapshotType.Underwater:
+                    if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
+                    break;
+            }
+        }
+
+        #endregion
+
+        #region SFX API
+
+        public void PlaySfx2D(string soundName)
+        {
+            if (soundLibrary == null) return;
+
+            AudioClip clip = soundLibrary.GetClipFromName(soundName);
+            if (clip == null) return;
+
+            if (fx2DSource == null) return;
+
+            fx2DSource.PlayOneShot(clip, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
+        }
+
+        public void PlaySfx3D(string soundName, Vector3 position)
+        {
+            if (soundLibrary == null) return;
+
+            AudioClip clip = soundLibrary.GetClipFromName(soundName);
+            if (clip == null) return;
+
+            if (fxPool == null) return;
+
+            fxPool.PlayClip(clip, position, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
+        }
+
+        #endregion
+
+        #region Music API
+
+        public void PlayMusic(string trackName, float delay = 0f, float fadeIn = 0f)
+        {
+            if (musicLibrary == null || musicSource == null) return;
+
+            AudioClip clip = musicLibrary.GetClipFromName(trackName);
+            if (clip == null) return;
+
+            musicSource.loop = musicLoop;
+            musicSource.clip = clip;
+
+            if (fadeIn > 0f)
+            {
+                StartCoroutine(MusicFadeInCo(delay, fadeIn));
+            }
+            else
+            {
+                musicSource.volume = 1f;
+                musicSource.PlayDelayed(Mathf.Max(0f, delay));
+            }
+        }
+
+        public void StopMusic(float fadeOut = 0f)
+        {
+            if (musicSource == null) return;
+
+            if (fadeOut > 0f)
+            {
+                StartCoroutine(MusicFadeOutCo(fadeOut));
+            }
+            else
+            {
+                musicSource.Stop();
+                musicSource.clip = null;
+            }
+        }
+
+        private IEnumerator MusicFadeInCo(float delay, float duration)
+        {
+            duration = Mathf.Max(0.0001f, duration);
+
+            musicSource.volume = 0f;
+            musicSource.PlayDelayed(Mathf.Max(0f, delay));
+
+            float time = 0f;
+            while (time < duration)
+            {
+                time += Time.deltaTime;
+                float t = Mathf.Clamp01(time / duration);
+                musicSource.volume = t;
+                yield return null;
+            }
+
+            musicSource.volume = 1f;
+        }
+
+        private IEnumerator MusicFadeOutCo(float duration)
+        {
+            duration = Mathf.Max(0.0001f, duration);
+
+            float start = musicSource.volume;
+            float time = 0f;
+
+            while (time < duration)
+            {
+                time += Time.deltaTime;
+                float t = Mathf.Clamp01(time / duration);
+                musicSource.volume = Mathf.Lerp(start, 0f, t);
+                yield return null;
+            }
+
+            musicSource.Stop();
+            musicSource.clip = null;
+            musicSource.volume = start;
+        }
+
+        #endregion
+
+        #region Ambient API
+
+        /// <summary>
+        /// Replace the entire ambient stack with a single profile (simple mode).
+        /// </summary>
+        public void SetAmbientProfile(AmbientProfile profile, float fade = -1f)
+        {
+            InitializeAmbientBus();
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+            ambientBus.SetSingleProfile(profile, f);
+        }
+
+        /// <summary>
+        /// Clears all ambience (fades out whatever is active).
+        /// </summary>
+        public void ClearAmbient(float fade = -1f)
+        {
+            InitializeAmbientBus();
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+            ambientBus.Clear(f);
+        }
+
+        /// <summary>
+        /// Push a profile onto the ambient stack. Higher priority wins voice allocation when budget is exceeded.
+        /// Returns a token you can store to pop later.
+        /// </summary>
+        public int PushAmbientProfile(AmbientProfile profile, int priority = 0, float fade = -1f)
+        {
+            InitializeAmbientBus();
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+            return ambientBus.Push(profile, priority, f);
+        }
+
+        /// <summary>
+        /// Pops a previously pushed profile token.
+        /// </summary>
+        public void PopAmbientToken(int token, float fade = -1f)
+        {
+            InitializeAmbientBus();
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+            ambientBus.Pop(token, f);
+        }
+
+        /// <summary>
+        /// Convenience: remove the last stack entry matching this profile.
+        /// </summary>
+        public void PopAmbientProfile(AmbientProfile profile, float fade = -1f)
+        {
+            InitializeAmbientBus();
+
+            float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
+            ambientBus.PopProfile(profile, f);
+        }
+
+        /// <summary>
+        /// Debug helper.
+        /// </summary>
+        public bool TryGetCurrentAmbientStack(out int count)
+        {
+            if (ambientBus == null)
+            {
+                count = 0;
+                return false;
+            }
+
+            count = ambientBus.StackCount;
+            return true;
+        }
+
+        #endregion
+
+        #region Clip Name Helpers 
+
+        public bool TryGetSoundNames(out string[] names)
+        {
+            names = soundLibrary != null ? soundLibrary.GetAllClipNames() : null;
+            return names != null && names.Length > 0;
+        }
+
+        public bool TryGetMusicNames(out string[] names)
+        {
+            names = musicLibrary != null ? musicLibrary.GetAllClipNames() : null;
+            return names != null && names.Length > 0;
+        }
+
+        public bool TryGetAmbientNames(out string[] names)
+        {
+            names = ambientLibrary != null ? ambientLibrary.GetAllClipNames() : null;
+            return names != null && names.Length > 0;
+        }
+
+        #endregion
+
+        #region Editor Auto-Assign 
 
 #if UNITY_EDITOR
-		private void OnValidate()
-		{
-			if (!Application.isPlaying)
-			{
-				if (mainMixer == null)
-				{
-					string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
-					if (guids.Length > 0)
-					{
-						string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-						mainMixer = AssetDatabase.LoadAssetAtPath<AudioMixer>(path);
-						Debug.Log($"Auto-assigned mainMixer: {mainMixer.name}");
-					}
-				}
+        private void AutoAssignMixerAndGroups_EditorOnly()
+        {
+            if (mainMixer == null)
+            {
+                try
+                {
+                    string[] guids = AssetDatabase.FindAssets("t:AudioMixer");
+                    if (guids != null && guids.Length > 0)
+                    {
+                        string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                        mainMixer = AssetDatabase.LoadAssetAtPath<AudioMixer>(path);
+                    }
+                }
+                catch
+                {
+                }
+            }
 
-				if (mainMixer != null)
-				{
-					TryAssignMissingGroupsAndSnapshots();
-					EditorUtility.SetDirty(this);
-				}
-			}
+            if (mainMixer != null)
+            {
+                if (musicGroup == null) musicGroup = FindGroup(mainMixer, new string[] { "Music", "Master/Music" });
+                if (ambientGroup == null) ambientGroup = FindGroup(mainMixer, new string[] { "Ambient", "Master/Ambient", "Ambience" });
+                if (fxGroup == null) fxGroup = FindGroup(mainMixer, new string[] { "FX", "SFX", "Master/FX", "Master/SFX" });
 
-			soundLibrary = GetComponent<SoundLibrary>();
-			musicLibrary = GetComponent<MusicLibrary>();
-			ambientLibrary = GetComponent<AmbientLibrary>();
-		}
+                if (defaultSnapshot == null) defaultSnapshot = mainMixer.FindSnapshot("Default");
+                if (combatSnapshot == null) combatSnapshot = mainMixer.FindSnapshot("Combat");
+                if (stealthSnapshot == null) stealthSnapshot = mainMixer.FindSnapshot("Stealth");
+                if (underwaterSnapshot == null) underwaterSnapshot = mainMixer.FindSnapshot("Underwater");
+            }
+        }
+
+        private AudioMixerGroup FindGroup(AudioMixer mixer, string[] candidates)
+        {
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                try
+                {
+                    var found = mixer.FindMatchingGroups(candidates[i]);
+                    if (found != null && found.Length > 0) return found[0];
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                var master = mixer.FindMatchingGroups("Master");
+                if (master != null && master.Length > 0) return master[0];
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
 #endif
-		#endregion
 
-		#region Folder Scan
-#if UNITY_EDITOR
-		private const float SFX_MAX_LENGTH = 30f;     // <= this -> SFX candidate
-		private const float AMBIENT_MIN_LENGTH = 30f; // ambient if between AMBIENT_MIN_LENGTH and MUSIC_MIN_LENGTH
-		private const float MUSIC_MIN_LENGTH = 60f;   // >= this -> music candidate
+        #endregion
+//
+//
+// ===========================================================================================
+//
+//
+        #region AmbientBus Implementation
 
-		/// <summary>
-		/// Let user pick a folder inside Assets. Forces project-relative path (Assets/...)
-		/// </summary>
-		public void SetAudioFolderPath()
-		{
-			string selectedPath = EditorUtility.OpenFolderPanel("Select Audio Folder (must be inside Assets)", "Assets", "");
-			if (string.IsNullOrEmpty(selectedPath)) return;
+        private sealed class AmbientBus : MonoBehaviour
+        {
+            private sealed class StackEntry
+            {
+                public int token;
+                public AmbientProfile profile;
+                public int priority;
+            }
 
-			if (!selectedPath.StartsWith(Application.dataPath))
-			{
-				Debug.LogWarning("Selected folder must be inside the project's Assets folder.");
-				return;
-			}
+            private struct LayerKey : IEquatable<LayerKey>
+            {
+                public int token;
+                public int layerIndex;
 
-			// Convert to project-relative path and normalize slashes
-			audioFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length).Replace("\\", "/").TrimEnd('/');
-			Debug.Log($"audioFolderPath set to: {audioFolderPath}");
-		}
+                public bool Equals(LayerKey other)
+                {
+                    return token == other.token && layerIndex == other.layerIndex;
+                }
 
-		/// <summary>
-		/// Scans the configured folder for AudioClips and fills the temporary scanned lists:
-		/// scannedMusicClips, scannedAmbientClips, scannedSFXClips
-		/// </summary>
-		public void ScanFolders()
-		{
-			// Ensure lists exist
-			scannedMusicClips = scannedMusicClips ?? new List<AudioClip>();
-			scannedAmbientClips = scannedAmbientClips ?? new List<AudioClip>();
-			scannedSFXClips = scannedSFXClips ?? new List<AudioClip>();
+                public override bool Equals(object obj)
+                {
+                    return obj is LayerKey other && Equals(other);
+                }
 
-			scannedMusicClips.Clear();
-			scannedAmbientClips.Clear();
-			scannedSFXClips.Clear();
+                public override int GetHashCode()
+                {
+                    unchecked
+                    {
+                        return (token * 397) ^ layerIndex;
+                    }
+                }
+            }
 
-			if (string.IsNullOrEmpty(audioFolderPath))
-			{
-				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
-				return;
-			}
+            private sealed class LayerState
+            {
+                public LayerKey key;
+                public AudioClip clip;
+                public bool loop;
+                public float spatialBlend;
+                public bool randomStart;
+                public Vector2 pitchRange;
 
-			string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
-			int total = guids.Length;
-			for (int i = 0; i < total; i++)
-			{
-				EditorUtility.DisplayProgressBar("Scanning Audio", $"Processing clip {i + 1}/{total}", (float)i / Mathf.Max(1, total));
-				string path = AssetDatabase.GUIDToAssetPath(guids[i]);
-				var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
-				if (clip == null) continue;
+                public float baseVolume01;
+                public float targetVolume;
+                public float currentVolume;
 
-				string normalizedPath = path.ToLower().Replace("\\", "/");
-				string fileName = Path.GetFileNameWithoutExtension(path).ToLower();
+                public int priority;
+            }
 
-				// Folder-based hints (highest priority)
-				if (normalizedPath.Contains("/music/") || normalizedPath.Contains("/bgm/") || fileName.Contains("music") || fileName.Contains("bgm") || fileName.Contains("theme"))
-				{
-					scannedMusicClips.Add(clip);
-					continue;
-				}
-				if (normalizedPath.Contains("/ambient/") || normalizedPath.Contains("/ambience/") || normalizedPath.Contains("/environment/") || fileName.Contains("ambient") || fileName.Contains("amb"))
-				{
-					scannedAmbientClips.Add(clip);
-					continue;
-				}
-				if (normalizedPath.Contains("/sfx/") || normalizedPath.Contains("/fx/") || normalizedPath.Contains("/soundeffects/") || fileName.Contains("sfx") || fileName.Contains("fx"))
-				{
-					scannedSFXClips.Add(clip);
-					continue;
-				}
+            private sealed class Voice
+            {
+                public AudioSource source;
+                public LayerKey boundKey;
+                public bool bound;
+            }
 
-				// Filename heuristics
-				if (fileName.Contains("music") || fileName.Contains("bgm") || fileName.Contains("theme") || clip.length >= MUSIC_MIN_LENGTH)
-				{
-					scannedMusicClips.Add(clip);
-				}
-				else if (fileName.Contains("ambient") || fileName.Contains("amb") || clip.length >= AMBIENT_MIN_LENGTH)
-				{
-					scannedAmbientClips.Add(clip);
-				}
-				else
-				{
-					scannedSFXClips.Add(clip);
-				}
-			}
+            public int StackCount => stack.Count;
 
-			EditorUtility.ClearProgressBar();
-			Debug.Log($"Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} sfx.");
-		}
+            private AudioMixerGroup outputGroup;
+            private int voiceCap;
+            private float gain = 1f;
 
-		/// <summary>
-		/// Ensure a folder exists under parent (creates it if needed) and returns the full path.
-		/// </summary>
-		private string EnsureSubfolder(string parentFolder, string subfolderName)
-		{
-			parentFolder = parentFolder.TrimEnd('/');
-			var candidate = parentFolder + "/" + subfolderName;
-			if (!AssetDatabase.IsValidFolder(candidate))
-			{
-				AssetDatabase.CreateFolder(parentFolder, subfolderName);
-			}
-			return candidate;
-		}
+            private readonly List<StackEntry> stack = new();
+            private readonly Dictionary<LayerKey, LayerState> layers = new();
 
-		/// <summary>
-		/// Generate ScriptableObjects under a GeneratedTracks folder with structured subfolders:
-		/// GeneratedTracks/Music, GeneratedTracks/Ambient, GeneratedTracks/SFX
-		/// For SFX we group variants by folder name (preferred) or filename prefix (fallback).
-		/// </summary>
-		public void GenerateScriptableObjects()
-		{
-			if (string.IsNullOrEmpty(audioFolderPath))
-			{
-				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
-				return;
-			}
+            private readonly List<Voice> voices = new();
 
-			// Ensure GeneratedTracks and subfolders exist
-			string generatedFolder = audioFolderPath.TrimEnd('/') + "/GeneratedTracks";
-			if (!AssetDatabase.IsValidFolder(generatedFolder))
-			{
-				AssetDatabase.CreateFolder(audioFolderPath, "GeneratedTracks");
-			}
+            private Coroutine transitionCo;
+            private int tokenCounter = 1;
 
-			string musicFolder = EnsureSubfolder(generatedFolder, "Music");
-			string ambientFolder = EnsureSubfolder(generatedFolder, "Ambient");
-			string sfxFolder = EnsureSubfolder(generatedFolder, "SFX");
+            public void Configure(AudioMixerGroup group, int maxVoices)
+            {
+                outputGroup = group;
+                voiceCap = Mathf.Clamp(maxVoices, 1, 128);
+                EnsureVoices(voiceCap);
+            }
 
-			// Find clips deterministically
-			string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
-			int total = guids.Length;
-			EditorUtility.DisplayProgressBar("Generating Assets", $"Analyzing {total} clips", 0f);
+            public void SetGain(float newGain)
+            {
+                gain = Mathf.Clamp01(newGain);
 
-			// Prepare SFX grouping map
-			Dictionary<string, List<AudioClip>> sfxGroups = new();
+                for (int i = 0; i < voices.Count; i++)
+                {
+                    if (!voices[i].bound) continue;
+                    voices[i].source.volume = layers.TryGetValue(voices[i].boundKey, out var st) ? (st.currentVolume * gain) : 0f;
+                }
+            }
 
-			int createdMusic = 0, createdAmbient = 0, createdSfx = 0;
+            public void SetSingleProfile(AmbientProfile profile, float fade)
+            {
+                stack.Clear();
+                layers.Clear();
 
-			for (int i = 0; i < total; i++)
-			{
-				string clipPath = AssetDatabase.GUIDToAssetPath(guids[i]);
-				var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(clipPath);
-				if (clip == null) continue;
+                if (profile != null)
+                {
+                    var e = new StackEntry();
+                    e.token = tokenCounter++;
+                    e.profile = profile;
+                    e.priority = 0;
+                    stack.Add(e);
+                }
 
-				string fileName = Path.GetFileNameWithoutExtension(clipPath);
-				string sanitizedFileName = SanitizeAssetName(fileName);
-				string normalizedPath = clipPath.ToLower().Replace("\\", "/");
+                RebuildLayersFromStack();
+                StartTransition(fade);
+            }
 
-				EditorUtility.DisplayProgressBar("Generating Assets", $"Processing {i + 1}/{total}: {fileName}", (float)i / Mathf.Max(1, total));
+            public int Push(AmbientProfile profile, int priority, float fade)
+            {
+                if (profile == null)
+                {
+                    return -1;
+                }
 
-				// Decide type and target folder
-				bool isMusic = normalizedPath.Contains("/music/") || fileName.ToLower().Contains("music") || clip.length >= MUSIC_MIN_LENGTH;
-				bool isAmbient = !isMusic && (normalizedPath.Contains("/ambient/") || fileName.ToLower().Contains("ambient") || (clip.length >= AMBIENT_MIN_LENGTH && clip.length < MUSIC_MIN_LENGTH));
-				bool isSfx = !isMusic && !isAmbient || normalizedPath.Contains("/sfx/") || normalizedPath.Contains("/fx/") || clip.length <= SFX_MAX_LENGTH;
+                var e = new StackEntry();
+                e.token = tokenCounter++;
+                e.profile = profile;
+                e.priority = priority;
+                stack.Add(e);
 
-				if (isMusic)
-				{
-					string assetPath = $"{musicFolder}/{sanitizedFileName}.asset";
-					if (AssetDatabase.LoadAssetAtPath<MusicTrack>(assetPath) != null) continue;
+                RebuildLayersFromStack();
+                StartTransition(fade);
 
-					var mt = ScriptableObject.CreateInstance<MusicTrack>();
-					mt.trackName = fileName;
-					mt.clip = clip;
-					mt.description = $"Generated from {clipPath}";
-					AssetDatabase.CreateAsset(mt, assetPath);
-					createdMusic++;
-					continue;
-				}
+                return e.token;
+            }
 
-				if (isAmbient)
-				{
-					string assetPath = $"{ambientFolder}/{sanitizedFileName}.asset";
-					if (AssetDatabase.LoadAssetAtPath<AmbientTrack>(assetPath) != null) continue;
+            public void Pop(int token, float fade)
+            {
+                for (int i = stack.Count - 1; i >= 0; i--)
+                {
+                    if (stack[i].token == token)
+                    {
+                        stack.RemoveAt(i);
+                        break;
+                    }
+                }
 
-					var at = ScriptableObject.CreateInstance<AmbientTrack>();
-					at.trackName = fileName;
-					at.clip = clip;
-					at.description = $"Generated from {clipPath}";
-					AssetDatabase.CreateAsset(at, assetPath);
-					createdAmbient++;
-					continue;
-				}
+                RebuildLayersFromStack();
+                StartTransition(fade);
+            }
 
-				// SFX candidate: group by folder or prefix
-				string parentFolder = Path.GetFileName(Path.GetDirectoryName(clipPath));
-				parentFolder = string.IsNullOrEmpty(parentFolder) ? fileName : parentFolder;
+            public void PopProfile(AmbientProfile profile, float fade)
+            {
+                if (profile == null) return;
 
-				string lowerParent = parentFolder.ToLower();
-				bool parentIsGeneric = lowerParent == "sfx" || lowerParent == "sounds" || lowerParent == "audio" || lowerParent == "clips";
-				string groupKey;
-				if (!parentIsGeneric)
-				{
-					groupKey = SanitizeAssetName(parentFolder);
-				}
-				else
-				{
-					string fileLower = fileName.ToLower();
-					int idx = fileLower.IndexOfAny(new char[] { '_', '-' });
-					if (idx > 0) groupKey = SanitizeAssetName(fileName.Substring(0, idx));
-					else groupKey = SanitizeAssetName(fileName);
-				}
+                for (int i = stack.Count - 1; i >= 0; i--)
+                {
+                    if (stack[i].profile == profile)
+                    {
+                        stack.RemoveAt(i);
+                        break;
+                    }
+                }
 
-				if (!sfxGroups.TryGetValue(groupKey, out var list))
-				{
-					list = new List<AudioClip>();
-					sfxGroups[groupKey] = list;
-				}
-				list.Add(clip);
-			}
+                RebuildLayersFromStack();
+                StartTransition(fade);
+            }
 
-			// Create SFX assets (one SoundClipData per group) under the SFX subfolder
-			int processedGroups = 0;
-			int groupsTotal = sfxGroups.Count;
-			foreach (var kv in sfxGroups)
-			{
-				processedGroups++;
-				EditorUtility.DisplayProgressBar("Generating SFX", $"Creating SFX {processedGroups}/{groupsTotal}: {kv.Key}", (float)processedGroups / Mathf.Max(1, groupsTotal));
-				string assetPath = $"{sfxFolder}/{kv.Key}.asset";
+            public void Clear(float fade)
+            {
+                stack.Clear();
+                RebuildLayersFromStack();
+                StartTransition(fade);
+            }
 
-				// skip if exists
-				if (AssetDatabase.LoadAssetAtPath<SoundClipData>(assetPath) != null) continue;
+            private void RebuildLayersFromStack()
+            {
+                // Build the "desired" set of layer states from stack.
+                // Keep existing LayerState objects where possible for smooth fades.
+                var desiredKeys = new HashSet<LayerKey>();
 
-				var sd = ScriptableObject.CreateInstance<SoundClipData>();
-				sd.soundName = kv.Key;
-				sd.clips = kv.Value.ToArray();
-				AssetDatabase.CreateAsset(sd, assetPath);
-				createdSfx++;
-			}
+                for (int s = 0; s < stack.Count; s++)
+                {
+                    var entry = stack[s];
+                    var profile = entry.profile;
+                    if (profile == null || profile.layers == null) continue;
 
-			EditorUtility.ClearProgressBar();
-			AssetDatabase.SaveAssets();
-			AssetDatabase.Refresh();
+                    for (int i = 0; i < profile.layers.Length; i++)
+                    {
+                        AmbientLayer layer = profile.layers[i];
+                        if (layer == null || layer.track == null || layer.track.clip == null) continue;
 
-			Debug.Log($"Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}");
-		}
+                        var key = new LayerKey { token = entry.token, layerIndex = i };
+                        desiredKeys.Add(key);
 
-		/// <summary>
-		/// Assigns generated assets to the appropriate runtime libraries on this GameObject.
-		/// Uses the structured GeneratedTracks subfolders.
-		/// </summary>
-		public void AssignToLibraries()
-		{
-			if (string.IsNullOrEmpty(audioFolderPath))
-			{
-				Debug.LogWarning("audioFolderPath not set. Call SetAudioFolderPath() first.");
-				return;
-			}
+                        if (!layers.TryGetValue(key, out LayerState st))
+                        {
+                            st = new LayerState();
+                            st.key = key;
+                            st.currentVolume = 0f;
+                            layers.Add(key, st);
+                        }
 
-			string generatedFolder = audioFolderPath.TrimEnd('/') + "/GeneratedTracks";
-			if (!AssetDatabase.IsValidFolder(generatedFolder))
-			{
-				Debug.LogWarning("GeneratedTracks folder not found. Run GenerateScriptableObjects() first.");
-				return;
-			}
+                        st.clip = layer.track.clip;
+                        st.loop = layer.loop;
+                        st.spatialBlend = layer.spatialBlend;
+                        st.randomStart = layer.randomStartTime;
+                        st.pitchRange = layer.pitchRange;
+                        st.baseVolume01 = Mathf.Clamp01(layer.volume);
+                        st.priority = entry.priority;
 
-			string musicFolder = generatedFolder + "/Music";
-			string ambientFolder = generatedFolder + "/Ambient";
-			string sfxFolder = generatedFolder + "/SFX";
+                        // Set desired target. Voice allocation happens later.
+                        st.targetVolume = st.baseVolume01;
+                    }
+                }
 
-			var musicLib = GetComponent<MusicLibrary>();
-			var ambientLib = GetComponent<AmbientLibrary>();
-			var sfxLib = GetComponent<SoundLibrary>();
+                // Any existing layer not desired should fade out
+                var toFadeOut = new List<LayerKey>();
 
-			if (musicLib == null || ambientLib == null || sfxLib == null)
-			{
-				Debug.LogWarning("Missing one or more library components on this GameObject.");
-				return;
-			}
+                foreach (var kv in layers)
+                {
+                    if (!desiredKeys.Contains(kv.Key))
+                    {
+                        kv.Value.targetVolume = 0f;
+                        toFadeOut.Add(kv.Key);
+                    }
+                }
+            }
 
-			int addedMusic = 0, addedAmbient = 0, addedSfx = 0;
+            private void StartTransition(float fade)
+            {
+                if (transitionCo != null)
+                {
+                    StopCoroutine(transitionCo);
+                    transitionCo = null;
+                }
 
-			if (AssetDatabase.IsValidFolder(musicFolder))
-			{
-				foreach (var guid in AssetDatabase.FindAssets("t:MusicTrack", new[] { musicFolder }))
-				{
-					var p = AssetDatabase.GUIDToAssetPath(guid);
-					var mt = AssetDatabase.LoadAssetAtPath<MusicTrack>(p);
-					if (mt != null && !musicLib.tracks.Contains(mt))
-					{
-						musicLib.tracks.Add(mt);
-						addedMusic++;
-					}
-				}
-			}
+                transitionCo = StartCoroutine(TransitionCo(Mathf.Max(0f, fade)));
+            }
 
-			if (AssetDatabase.IsValidFolder(ambientFolder))
-			{
-				foreach (var guid in AssetDatabase.FindAssets("t:AmbientTrack", new[] { ambientFolder }))
-				{
-					var p = AssetDatabase.GUIDToAssetPath(guid);
-					var at = AssetDatabase.LoadAssetAtPath<AmbientTrack>(p);
-					if (at != null && !ambientLib.tracks.Contains(at))
-					{
-						ambientLib.tracks.Add(at);
-						addedAmbient++;
-					}
-				}
-			}
+            private IEnumerator TransitionCo(float fade)
+            {
+                EnsureVoices(voiceCap);
 
-			if (AssetDatabase.IsValidFolder(sfxFolder))
-			{
-				foreach (var guid in AssetDatabase.FindAssets("t:SoundClipData", new[] { sfxFolder }))
-				{
-					var p = AssetDatabase.GUIDToAssetPath(guid);
-					var sd = AssetDatabase.LoadAssetAtPath<SoundClipData>(p);
-					if (sd != null && !sfxLib.tracks.Contains(sd))
-					{
-						sfxLib.tracks.Add(sd);
-						addedSfx++;
-					}
-				}
-			}
+                // Choose which layers get voices (best N)
+                var chosen = ChooseTopLayers(voiceCap);
 
-			EditorUtility.SetDirty(musicLib);
-			EditorUtility.SetDirty(ambientLib);
-			EditorUtility.SetDirty(sfxLib);
-			AssetDatabase.SaveAssets();
+                // Any layer not chosen should be forced to targetVolume 0 for this transition
+                var chosenSet = new HashSet<LayerKey>();
+                for (int i = 0; i < chosen.Count; i++)
+                {
+                    chosenSet.Add(chosen[i].key);
+                }
 
-			Debug.Log($"Assigned to libraries — Music: {addedMusic}, Ambient: {addedAmbient}, SFX: {addedSfx}");
-		}
+                foreach (var kv in layers)
+                {
+                    if (!chosenSet.Contains(kv.Key))
+                    {
+                        kv.Value.targetVolume = 0f;
+                    }
+                    else
+                    {
+                        kv.Value.targetVolume = kv.Value.baseVolume01;
+                    }
+                }
 
-		/// <summary>
-		/// Helper: sanitize a folder or filename into a safe asset-friendly string.
-		/// </summary>
-		private string SanitizeAssetName(string raw)
-		{
-			if (string.IsNullOrEmpty(raw)) return "unnamed";
-			// remove invalid characters and trim
-			var clean = new string(raw.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
-			return clean.Trim().Replace(' ', '_').ToLower();
-		}
-#endif
-		#endregion
-	}
+                // Bind chosen layers to voices
+                for (int i = 0; i < voices.Count; i++)
+                {
+                    if (i < chosen.Count)
+                    {
+                        BindVoice(voices[i], chosen[i]);
+                    }
+                    else
+                    {
+                        UnbindVoice(voices[i]);
+                    }
+                }
+
+                // Fade
+                if (fade <= 0f)
+                {
+                    SnapToTargets();
+                    CleanupSilentLayers();
+                    transitionCo = null;
+                    yield break;
+                }
+
+                float time = 0f;
+                while (time < fade)
+                {
+                    time += Time.deltaTime;
+                    float t = Mathf.Clamp01(time / fade);
+
+                    for (int i = 0; i < voices.Count; i++)
+                    {
+                        if (!voices[i].bound) continue;
+
+                        if (layers.TryGetValue(voices[i].boundKey, out LayerState st))
+                        {
+                            st.currentVolume = Mathf.Lerp(st.currentVolume, st.targetVolume, t);
+                            voices[i].source.volume = st.currentVolume * gain;
+                        }
+                    }
+
+                    yield return null;
+                }
+
+                SnapToTargets();
+                CleanupSilentLayers();
+                transitionCo = null;
+            }
+
+            private void SnapToTargets()
+            {
+                foreach (var kv in layers)
+                {
+                    kv.Value.currentVolume = kv.Value.targetVolume;
+                }
+
+                for (int i = 0; i < voices.Count; i++)
+                {
+                    if (!voices[i].bound)
+                    {
+                        voices[i].source.volume = 0f;
+                        continue;
+                    }
+
+                    if (layers.TryGetValue(voices[i].boundKey, out LayerState st))
+                    {
+                        voices[i].source.volume = st.currentVolume * gain;
+                        if (st.currentVolume <= 0f)
+                        {
+                            UnbindVoice(voices[i]);
+                        }
+                    }
+                    else
+                    {
+                        UnbindVoice(voices[i]);
+                    }
+                }
+            }
+
+            private void CleanupSilentLayers()
+            {
+                var remove = new List<LayerKey>();
+
+                foreach (var kv in layers)
+                {
+                    if (kv.Value.currentVolume <= 0.0001f && kv.Value.targetVolume <= 0.0001f)
+                    {
+                        remove.Add(kv.Key);
+                    }
+                }
+
+                for (int i = 0; i < remove.Count; i++)
+                {
+                    layers.Remove(remove[i]);
+                }
+            }
+
+            private List<LayerState> ChooseTopLayers(int count)
+            {
+                var list = new List<LayerState>(layers.Values);
+
+                list.Sort((a, b) =>
+                {
+                    int p = b.priority.CompareTo(a.priority);
+                    if (p != 0) return p;
+                    return b.baseVolume01.CompareTo(a.baseVolume01);
+                });
+
+                if (list.Count > count)
+                {
+                    list.RemoveRange(count, list.Count - count);
+                }
+
+                return list;
+            }
+
+            private void BindVoice(Voice voice, LayerState st)
+            {
+                if (voice.source == null) return;
+
+                bool needsRebind = !voice.bound || !voice.boundKey.Equals(st.key) || voice.source.clip != st.clip;
+
+                voice.bound = true;
+                voice.boundKey = st.key;
+
+                if (needsRebind)
+                {
+                    voice.source.outputAudioMixerGroup = outputGroup;
+                    voice.source.playOnAwake = false;
+
+                    voice.source.clip = st.clip;
+                    voice.source.loop = st.loop;
+                    voice.source.spatialBlend = st.spatialBlend;
+
+                    if (st.randomStart && voice.source.clip != null && voice.source.clip.length > 0f)
+                    {
+                        voice.source.time = UnityEngine.Random.Range(0f, voice.source.clip.length);
+                    }
+
+                    if (st.pitchRange.x != st.pitchRange.y)
+                    {
+                        voice.source.pitch = UnityEngine.Random.Range(st.pitchRange.x, st.pitchRange.y);
+                    }
+                    else
+                    {
+                        voice.source.pitch = st.pitchRange.x;
+                    }
+
+                    if (!voice.source.isPlaying)
+                    {
+                        voice.source.volume = st.currentVolume * gain;
+                        voice.source.Play();
+                    }
+                }
+            }
+
+            private void UnbindVoice(Voice voice)
+            {
+                if (voice.source == null) return;
+
+                voice.source.Stop();
+                voice.source.clip = null;
+                voice.source.volume = 0f;
+
+                voice.bound = false;
+            }
+
+            private void EnsureVoices(int needed)
+            {
+                needed = Mathf.Clamp(needed, 1, 128);
+
+                while (voices.Count < needed)
+                {
+                    GameObject go = new GameObject($"AmbientVoice_{voices.Count}");
+                    go.transform.parent = transform;
+
+                    AudioSource src = go.AddComponent<AudioSource>();
+                    src.playOnAwake = false;
+                    src.loop = true;
+                    src.volume = 0f;
+                    src.outputAudioMixerGroup = outputGroup;
+
+                    var v = new Voice();
+                    v.source = src;
+                    v.bound = false;
+
+                    voices.Add(v);
+                }
+
+                for (int i = needed; i < voices.Count; i++)
+                {
+                    UnbindVoice(voices[i]);
+                }
+            }
+        }
+
+        #endregion
+    }
 }

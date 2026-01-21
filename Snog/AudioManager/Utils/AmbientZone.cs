@@ -1,35 +1,18 @@
 
+using System.Collections.Generic;
 using UnityEngine;
 using Snog.Audio;
 using Snog.Audio.Layers;
 
 [AddComponentMenu("Snog/AudioManager/Ambient Zone")]
+[RequireComponent(typeof(Collider))]
 public class AmbientZone : MonoBehaviour
 {
-    [Header("Zone")]
-    [Tooltip("Which profile should be activated when the player enters this zone.")]
-    [SerializeField] private AmbientProfile profile;
-
-    [Tooltip("Only colliders with this tag will trigger the zone.")]
-    [SerializeField] private string TagToCompare = "Player";
-
-    [Header("Enter Behavior")]
-    [Tooltip("If true, crossfades from the current profile to the target profile. Otherwise, switches instantly.")]
-    [SerializeField] private bool crossfadeOnEnter = true;
-
-    [Tooltip("Fade duration used on enter when crossfading.")]
-    [SerializeField] private float enterFadeDuration = 2f;
-
-    [Header("Exit Behavior")]
-    [Tooltip("What happens on exit:\nNone - do nothing\nStopFade - fade out all ambient layers\nStopImmediate - stop all ambient layers instantly")]
-    [SerializeField] private ExitAction exitAction = ExitAction.None;
-
-    [Tooltip("Fade duration used on exit when StopFade is selected.")]
-    [SerializeField] private float exitFadeDuration = 2f;
-
-    [Header("Gizmos")]
-    [SerializeField] private Color gizmoColor = new Color(0.2f, 0.7f, 0.4f, 0.25f);
-    [SerializeField] private Color gizmoWireColor = new Color(0.2f, 0.7f, 0.4f, 1f);
+    public enum ZoneMode
+    {
+        Replace,
+        Stack
+    }
 
     public enum ExitAction
     {
@@ -38,12 +21,58 @@ public class AmbientZone : MonoBehaviour
         StopImmediate
     }
 
+    [Header("Zone")]
+    [SerializeField] private AmbientProfile profile;
+    [SerializeField] private string tagToCompare = "Player";
+
+    [Header("Mode")]
+    [SerializeField] private ZoneMode mode = ZoneMode.Stack;
+
+    [Tooltip("Used only in Stack mode. Higher priority wins when voice budget is exceeded.")]
+    [SerializeField] private int stackPriority = 0;
+
+    [Header("Enter Behavior")]
+    [SerializeField] private bool fadeOnEnter = true;
+    [SerializeField] private float enterFadeDuration = 2f;
+
+    [Header("Exit Behavior")]
+    [SerializeField] private ExitAction exitAction = ExitAction.None;
+    [SerializeField] private float exitFadeDuration = 2f;
+
+    [Header("Gizmos")]
+    [SerializeField] private Color gizmoColor = new Color(0.2f, 0.7f, 0.4f, 0.25f);
+    [SerializeField] private Color gizmoWireColor = new Color(0.2f, 0.7f, 0.4f, 1f);
+
+    private readonly HashSet<Collider> inside = new HashSet<Collider>();
+    private int ambientToken = -1;
+
+    private void Reset()
+    {
+        Collider c = GetComponent<Collider>();
+        if (c != null)
+        {
+            c.isTrigger = true;
+        }
+    }
+
     private void OnTriggerEnter(Collider other)
     {
-        if (!other.CompareTag(TagToCompare))
+        if (!other.CompareTag(tagToCompare))
+        {
             return;
+        }
 
-        var manager = AudioManager.Instance;
+        if (!inside.Add(other))
+        {
+            return;
+        }
+
+        if (inside.Count > 1)
+        {
+            return;
+        }
+
+        AudioManager manager = AudioManager.Instance;
         if (manager == null)
         {
             Debug.LogWarning("No AudioManager.Instance found.", this);
@@ -56,57 +85,138 @@ public class AmbientZone : MonoBehaviour
             return;
         }
 
-        if (crossfadeOnEnter)
+        float fade = GetEnterFade();
+
+        if (!fadeOnEnter)
         {
-            float duration = Mathf.Max(0f, GetEnterFade());
-            manager.StartCoroutine(manager.CrossfadeAmbientProfile(profile, duration));
+            fade = 0f;
         }
-        else
+
+        switch (mode)
         {
-            manager.PlayAmbientProfile(profile);
+            case ZoneMode.Replace:
+            {
+                manager.SetAmbientProfile(profile, fade);
+                break;
+            }
+            case ZoneMode.Stack:
+            {
+                // Prevent double-push if something odd happens
+                if (ambientToken >= 0)
+                {
+                    manager.PopAmbientToken(ambientToken, 0f);
+                    ambientToken = -1;
+                }
+
+                ambientToken = manager.PushAmbientProfile(profile, stackPriority, fade);
+                break;
+            }
         }
     }
 
     private void OnTriggerExit(Collider other)
     {
-        if (!other.CompareTag(TagToCompare))
+        if (!other.CompareTag(tagToCompare))
+        {
             return;
+        }
 
-        var manager = AudioManager.Instance;
-        if (manager == null)
+        if (!inside.Remove(other))
+        {
             return;
+        }
+
+        if (inside.Count > 0)
+        {
+            return;
+        }
+
+        AudioManager manager = AudioManager.Instance;
+        if (manager == null)
+        {
+            return;
+        }
+
+        float fade = Mathf.Max(0f, exitFadeDuration);
 
         switch (exitAction)
         {
             case ExitAction.None:
+            {
                 break;
-
+            }
             case ExitAction.StopFade:
-                manager.StartCoroutine(manager.StopAmbientProfileFade(Mathf.Max(0f, exitFadeDuration)));
+            {
+                HandleExit(manager, fade);
                 break;
-
+            }
             case ExitAction.StopImmediate:
-                manager.StopAmbientProfileImmediate();
+            {
+                HandleExit(manager, 0f);
                 break;
+            }
+        }
+    }
+
+    private void OnDisable()
+    {
+        // Safety: if zone is disabled while player is inside, pop/clear so ambience doesn't get stuck.
+        if (inside.Count == 0)
+        {
+            return;
+        }
+
+        inside.Clear();
+
+        AudioManager manager = AudioManager.Instance;
+        if (manager == null)
+        {
+            return;
+        }
+
+        HandleExit(manager, 0f);
+    }
+
+    private void HandleExit(AudioManager manager, float fade)
+    {
+        switch (mode)
+        {
+            case ZoneMode.Replace:
+            {
+                manager.ClearAmbient(fade);
+                break;
+            }
+            case ZoneMode.Stack:
+            {
+                if (ambientToken >= 0)
+                {
+                    manager.PopAmbientToken(ambientToken, fade);
+                    ambientToken = -1;
+                }
+                break;
+            }
         }
     }
 
     private float GetEnterFade()
     {
         if (profile != null && profile.defaultFade > 0f)
+        {
             return profile.defaultFade;
+        }
 
-        return enterFadeDuration;
+        return Mathf.Max(0f, enterFadeDuration);
     }
 
     private void OnDrawGizmos()
     {
         Gizmos.color = gizmoColor;
-        var col = GetComponent<Collider>();
+
+        Collider col = GetComponent<Collider>();
         if (col is BoxCollider box)
         {
-            var t = box.transform;
-            var size = Vector3.Scale(box.size, t.lossyScale);
+            Transform t = box.transform;
+            Vector3 size = Vector3.Scale(box.size, t.lossyScale);
             Gizmos.matrix = Matrix4x4.TRS(t.TransformPoint(box.center), t.rotation, Vector3.one);
             Gizmos.DrawCube(Vector3.zero, size);
 
@@ -115,7 +225,7 @@ public class AmbientZone : MonoBehaviour
         }
         else if (col is SphereCollider sphere)
         {
-            var t = sphere.transform;
+            Transform t = sphere.transform;
             float radius = sphere.radius * Mathf.Max(t.lossyScale.x, Mathf.Max(t.lossyScale.y, t.lossyScale.z));
             Gizmos.matrix = Matrix4x4.TRS(t.TransformPoint(sphere.center), t.rotation, Vector3.one);
             Gizmos.DrawSphere(Vector3.zero, radius);
@@ -125,7 +235,7 @@ public class AmbientZone : MonoBehaviour
         }
         else if (col is CapsuleCollider capsule)
         {
-            var t = capsule.transform;
+            Transform t = capsule.transform;
             float radius = capsule.radius * Mathf.Max(t.lossyScale.x, t.lossyScale.z);
             float height = capsule.height * t.lossyScale.y;
 
@@ -133,7 +243,6 @@ public class AmbientZone : MonoBehaviour
             Gizmos.color = gizmoColor;
 
             Gizmos.DrawCube(Vector3.zero, new Vector3(radius * 2f, Mathf.Max(0f, height - radius * 2f), radius * 2f));
-
             Gizmos.DrawSphere(new Vector3(0f, height * 0.5f - radius, 0f), radius);
             Gizmos.DrawSphere(new Vector3(0f, -height * 0.5f + radius, 0f), radius);
 
@@ -149,3 +258,4 @@ public class AmbientZone : MonoBehaviour
         }
     }
 }
+``
