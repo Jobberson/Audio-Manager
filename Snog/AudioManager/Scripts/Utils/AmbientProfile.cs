@@ -2,7 +2,7 @@
 using UnityEngine;
 using Snog.Audio.Clips;
 
-namespace Snog.Audio.Layers
+namespace Snog.Audio.Utils
 {
     [System.Serializable]
     public class AmbientLayer

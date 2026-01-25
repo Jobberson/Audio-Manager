@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.Audio;
 using Snog.Audio.Clips;
 
-namespace Snog.Audio
+namespace Snog.Audio.Utils
 {
     [AddComponentMenu("Snog/Audio/Ambient Emitter")]
     [DisallowMultipleComponent]
@@ -27,7 +27,7 @@ namespace Snog.Audio
         [Header("Playback")]
         [SerializeField] private bool loop = true;
         [SerializeField] private bool randomStartTime = true;
-        [SerializeField] private Vector2 pitchRange = new Vector2(1f, 1f);
+        [SerializeField] private Vector2 pitchRange = new(1f, 1f);
 
         private AudioSource source;
         private float currentVolume01;

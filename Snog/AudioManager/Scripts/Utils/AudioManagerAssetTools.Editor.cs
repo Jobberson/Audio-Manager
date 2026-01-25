@@ -6,8 +6,10 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+
 using Snog.Audio.Clips;
 using Snog.Audio.Libraries;
+
 
 namespace Snog.Audio
 {
@@ -444,7 +446,6 @@ namespace Snog.Audio
 
             return clean.Trim().Replace(' ', '_').ToLower();
         }
-
         #endregion
     }
 }

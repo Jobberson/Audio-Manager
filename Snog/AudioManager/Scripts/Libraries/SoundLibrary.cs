@@ -1,5 +1,4 @@
-﻿﻿// SoundLibrary.cs
-using UnityEngine;
+﻿﻿using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +7,7 @@ using Snog.Audio.Clips;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
- 
+
 namespace Snog.Audio.Libraries
 {
     [Serializable]
@@ -31,7 +30,7 @@ namespace Snog.Audio.Libraries
 
         private void Awake()
         {
-            BuildDictionary(); 
+            BuildDictionary();
         }
 
         /// <summary>
@@ -40,6 +39,7 @@ namespace Snog.Audio.Libraries
         private void EnsureBuilt()
         {
             if (built) return;
+
             BuildDictionary();
 
 #if UNITY_EDITOR
@@ -58,8 +58,10 @@ namespace Snog.Audio.Libraries
                         soundDict[so.soundName] = so.clips;
                 }
             }
-            catch
+            catch (System.Exception ex)
             {
+                // log in editor so you can see failures during import / scanning
+                Debug.LogException(ex);
             }
 #endif
 
@@ -112,13 +114,26 @@ namespace Snog.Audio.Libraries
             return soundDict.Keys.OrderBy(k => k).ToArray();
         }
 
+        /// <summary>
+        /// Public API to force the library to rebuild (safe to call from editor code).
+        /// Call this after creating/assigning new SoundClipData assets.
+        /// </summary>
+        public void RebuildDictionaries()
+        {
+            // Force rebuild next time EnsureBuilt is called
+            built = false;
+            EnsureBuilt();
+
+#if UNITY_EDITOR
+            EditorUtility.SetDirty(this);
+#endif
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Rebuild Sound Dictionary")]
         public void Editor_RebuildDictionary()
         {
-            built = false;
-            EnsureBuilt();
-            EditorUtility.SetDirty(this);
+            RebuildDictionaries();
         }
 #endif
     }

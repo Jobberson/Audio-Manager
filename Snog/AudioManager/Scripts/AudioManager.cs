@@ -1,13 +1,14 @@
-﻿﻿
-using System;
+﻿﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
+
 using UnityEngine;
 using UnityEngine.Audio;
+
 using Snog.Audio.Libraries;
 using Snog.Audio.Clips;
-using Snog.Audio.Layers;
+using Snog.Audio.Utils;
+using Snog.Shared;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -142,8 +143,8 @@ namespace Snog.Audio
         private float ambientCurrentFade = 0f;
         private float ambientNextRescoreTime = 0f;
 
-        private readonly Dictionary<AmbientTrack, float> desiredVolumeByTrack = new Dictionary<AmbientTrack, float>();
-        private readonly Dictionary<AmbientTrack, int> desiredPriorityByTrack = new Dictionary<AmbientTrack, int>();
+        private readonly Dictionary<AmbientTrack, float> desiredVolumeByTrack = new();
+        private readonly Dictionary<AmbientTrack, int> desiredPriorityByTrack = new();
 
         #endregion
 
@@ -153,9 +154,7 @@ namespace Snog.Audio
         {
             base.Awake();
 
-            soundLibrary = GetComponent<SoundLibrary>();
-            musicLibrary = GetComponent<MusicLibrary>();
-            ambientLibrary = GetComponent<AmbientLibrary>();
+            GetLibraries();
 
 #if UNITY_EDITOR
             AutoAssignMixerAndGroups_EditorOnly();
@@ -168,6 +167,15 @@ namespace Snog.Audio
 
             StartAmbientLoopIfNeeded();
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            // Ensure library component references exist while editing
+            GetLibraries();
+        }
+#endif
+
 
         #endregion
 
@@ -287,7 +295,11 @@ namespace Snog.Audio
 
         public void PlaySfx2D(string soundName)
         {
-            if (soundLibrary == null || fx2DSource == null) return;
+            if (soundLibrary == null || fx2DSource == null) 
+            {
+                Debug.LogWarning("AudioManager: SoundLibrary or fx2DSource is null. Cannot play SFX 2D.");
+                GetLibraries();
+            }
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
@@ -410,6 +422,8 @@ namespace Snog.Audio
 
         public void SetAmbientProfile(AmbientProfile profile, float fade = -1f)
         {
+            Debug.Log($"[AudioManager] SetAmbientProfile called -> {(profile != null ? profile.name : "null")}", profile);
+
             float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
 
             ambientStack.Clear();
@@ -550,7 +564,12 @@ namespace Snog.Audio
         {
             if (listenerOverride != null) return listenerOverride;
 
+#if UNITY_2023_1_OR_NEWER
             AudioListener listener = FindFirstObjectByType<AudioListener>();
+#else
+          AudioListener listener = FindObjectOfType<AudioListener>();
+#endif
+
             if (listener != null) return listener.transform;
 
             if (Camera.main != null) return Camera.main.transform;
@@ -573,7 +592,24 @@ namespace Snog.Audio
                 for (int i = 0; i < layers.Length; i++)
                 {
                     AmbientLayer layer = layers[i];
-                    if (layer == null || layer.track == null || layer.track.clip == null) continue;
+                    if (layer == null)
+                    {
+                        Debug.LogWarning("[AudioManager] AmbientLayer is null in profile.", entry.profile);
+                        continue;
+                    }
+
+                    if (layer.track == null)
+                    {
+                        Debug.LogWarning($"[AudioManager] AmbientLayer has no track in profile '{entry.profile.name}'.", entry.profile);
+                        continue;
+                    }
+
+                    if (layer.track.clip == null)
+                    {
+                        Debug.LogWarning($"[AudioManager] AmbientTrack '{layer.track.name}' has no clip assigned.", layer.track);
+                        continue;
+                    }
+
 
                     float v = Mathf.Clamp01(layer.volume);
 
@@ -709,6 +745,13 @@ namespace Snog.Audio
             return names != null && names.Length > 0;
         }
 
+        public void RebuildDictionaries()
+        {
+            soundLibrary?.RebuildDictionaries();
+            musicLibrary?.RebuildDictionaries(); 
+            ambientLibrary?.RebuildDictionaries();
+        }
+
         #endregion
 
         #region Editor Auto-Assign
@@ -771,6 +814,17 @@ namespace Snog.Audio
             return null;
         }
 #endif
+
+        #endregion
+
+        #region Helpers
+
+        private void GetLibraries()
+        {
+            if (soundLibrary == null) soundLibrary = GetComponent<SoundLibrary>();
+            if (musicLibrary == null) musicLibrary = GetComponent<MusicLibrary>();
+            if (ambientLibrary == null) ambientLibrary = GetComponent<AmbientLibrary>();
+        }
 
         #endregion
     }

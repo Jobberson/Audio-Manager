@@ -3,14 +3,14 @@
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
-using System.Collections.Generic;
-using Snog.Audio.Libraries;
-using Snog.Audio.Layers;
 
-namespace Snog.Audio
+using Snog.Audio.Libraries;
+using Snog.Audio.Utils;
+
+namespace Snog.Audio.Editor
 {
     [CustomEditor(typeof(AudioManager))]
-    public class AudioManagerEditor : Editor
+    public class AudioManagerEditor : UnityEditor.Editor
     {
         private AudioManager manager;
 
@@ -59,12 +59,31 @@ namespace Snog.Audio
             audioFolderPathProp = serializedObject.FindProperty("audioFolderPath");
 
             RefreshClipLists();
+            Repaint();
             RefreshEmitters();
+        }
+
+        void OnValidate()
+        {
         }
 
         private void RefreshClipLists()
         {
-            if (!manager.TryGetSoundNames(out soundNames) || soundNames == null || soundNames.Length == 0)
+            // Ensure serialized state is up-to-date
+            serializedObject.Update();
+
+            // Force manager to rebuild its internal caches
+            manager.RebuildDictionaries();
+
+            // Try populate now
+            bool gotSfx = manager.TryGetSoundNames(out soundNames) 
+                        && soundNames != null && soundNames.Length > 0;
+
+            bool gotMusic = manager.TryGetMusicNames(out musicNames) 
+                            && musicNames != null && musicNames.Length > 0;
+
+            // Set sensible defaults immediately so UI never breaks
+            if (!gotSfx)
             {
                 soundNames = new[] { "No SFX Found" };
                 selectedSoundIndex = 0;
@@ -74,7 +93,7 @@ namespace Snog.Audio
                 selectedSoundIndex = Mathf.Clamp(selectedSoundIndex, 0, soundNames.Length - 1);
             }
 
-            if (!manager.TryGetMusicNames(out musicNames) || musicNames == null || musicNames.Length == 0)
+            if (!gotMusic)
             {
                 musicNames = new[] { "No Music Found" };
                 selectedMusicIndex = 0;
@@ -83,11 +102,44 @@ namespace Snog.Audio
             {
                 selectedMusicIndex = Mathf.Clamp(selectedMusicIndex, 0, musicNames.Length - 1);
             }
+
+            // If either failed, refresh AssetDatabase and retry once next editor frame
+            if (!gotSfx || !gotMusic)
+            {
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+
+                EditorApplication.delayCall += () =>
+                {
+                    // Rebuild again after AssetDatabase refresh
+                    manager.RebuildDictionaries();
+
+                    if (manager.TryGetSoundNames(out var sNames) && sNames != null && sNames.Length > 0)
+                    {
+                        soundNames = sNames;
+                        selectedSoundIndex = Mathf.Clamp(selectedSoundIndex, 0, soundNames.Length - 1);
+                    }
+
+                    if (manager.TryGetMusicNames(out var mNames) && mNames != null && mNames.Length > 0)
+                    {
+                        musicNames = mNames;
+                        selectedMusicIndex = Mathf.Clamp(selectedMusicIndex, 0, musicNames.Length - 1);
+                    }
+
+                    Repaint();
+                };
+            }
+
+            Repaint();
         }
 
         private void RefreshEmitters()
         {
-            cachedEmitters = FindObjectsByType<AmbientEmitter>(sortMode: FindObjectsSortMode.None);
+#if UNITY_2023_1_OR_NEWER
+            cachedEmitters = FindObjectsByType<AmbientEmitter>(FindObjectsSortMode.None);
+#else
+            cachedEmitters = FindObjectsOfType<AmbientEmitter>();
+#endif
             selectedEmitterIndex = Mathf.Clamp(selectedEmitterIndex, 0, Mathf.Max(0, cachedEmitters.Length - 1));
         }
 
@@ -142,12 +194,26 @@ namespace Snog.Audio
 
                         if (GUILayout.Button(new GUIContent("🔍 Scan → Generate → Assign", "Scans folder, generates ScriptableObjects, and assigns them into libraries")))
                         {
+                            // Run manager pipeline
                             manager.ScanFolders();
                             manager.GenerateScriptableObjects();
                             manager.AssignToLibraries();
 
-                            RefreshClipLists();
-                            RefreshEmitters();
+                            // Make Unity persist new assets and schedule a re-query after import completes
+                            EditorUtility.SetDirty(manager);
+                            AssetDatabase.SaveAssets();
+                            AssetDatabase.Refresh();
+
+                            // Wait one editor loop so assets finish importing, then refresh lists & emitters
+                            EditorApplication.delayCall += () =>
+                            {
+                                serializedObject.Update();
+                                RefreshClipLists();
+                                RefreshEmitters();
+                                Repaint();
+                                AssetDatabase.SaveAssets();
+                                AssetDatabase.Refresh();
+                            };
                         }
                     }
 

@@ -1,4 +1,4 @@
-﻿﻿// MusicLibrary.cs
+﻿﻿// MusicLibrary.cs (patched)
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,13 +20,18 @@ namespace Snog.Audio.Libraries
 
         private void Awake()
         {
+            // Build now for runtime usage
             BuildDictionary();
             built = true;
         }
 
+        /// <summary>
+        /// Ensure the internal dictionary is built. Safe to call in editor or runtime.
+        /// </summary>
         private void EnsureBuilt()
         {
             if (built) return;
+
             BuildDictionary();
 
 #if UNITY_EDITOR
@@ -44,7 +49,10 @@ namespace Snog.Audio.Libraries
                         musicDictionary[asset.trackName] = asset.clip;
                 }
             }
-            catch { }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+            }
 #endif
 
             built = true;
@@ -80,13 +88,35 @@ namespace Snog.Audio.Libraries
             return musicDictionary.Keys.OrderBy(k => k).ToArray();
         }
 
+        // -------------------------
+        // Public rebuild helpers
+        // -------------------------
+        /// <summary>
+        /// Public API to force the library to rebuild (safe to call from editor code).
+        /// Call this after creating/assigning new MusicTrack assets.
+        /// </summary>
+        public void RebuildDictionaries()
+        {
+            built = false;
+            EnsureBuilt();
+
+#if UNITY_EDITOR
+            EditorUtility.SetDirty(this);
+            Debug.Log($"[MusicLibrary] RebuildDictionaries: found {musicDictionary.Count} tracks.");
+#endif
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Rebuild Music Dictionary")]
         public void Editor_RebuildDictionary()
         {
+            RebuildDictionaries();
+        }
+
+        // Run when edited in inspector — mark cache dirty so next query rebuilds.
+        private void OnValidate()
+        {
             built = false;
-            EnsureBuilt();
-            EditorUtility.SetDirty(this);
         }
 #endif
     }
