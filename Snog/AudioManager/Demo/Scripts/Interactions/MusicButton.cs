@@ -4,7 +4,7 @@ namespace Snog.Audio.Demo
 {
     public class MusicButton : MonoBehaviour, IInteractable
     {
-        [Header("SFX Settings")]
+        [Header("Music Settings")]
         [SerializeField] private string musicName = "MusicSample";
         [SerializeField] private bool stopMusic = true;
 
