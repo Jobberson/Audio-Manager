@@ -130,7 +130,7 @@ namespace Snog.Audio.Utils
             targetVolume01 = Mathf.Clamp01(v01);
         }
 
-        public void StepVolume(float dt, float fadeSeconds, float globalGain)
+        public void StepVolume(float dt, float fadeSeconds)
         {
             float speed = fadeSeconds <= 0f ? 1f : Mathf.Clamp01(dt / fadeSeconds);
 
@@ -138,7 +138,7 @@ namespace Snog.Audio.Utils
 
             if (source != null)
             {
-                source.volume = currentVolume01 * Mathf.Clamp01(globalGain);
+                source.volume = currentVolume01;
 
                 if (currentVolume01 <= 0.0001f && targetVolume01 <= 0.0001f)
                 {

@@ -290,7 +290,7 @@ namespace Snog.Audio
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
 
-            fx2DSource.PlayOneShot(clip, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
+            fx2DSource.PlayOneShot(clip);
         }
 
         public void PlaySfx3D(string soundName, Vector3 position)
@@ -300,7 +300,7 @@ namespace Snog.Audio
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
 
-            fxPool.PlayClip(clip, position, Mathf.Clamp01(fxVolume) * Mathf.Clamp01(masterVolume));
+            fxPool.PlayClip(clip, position);
         }
 
         #endregion
