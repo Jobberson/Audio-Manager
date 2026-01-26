@@ -211,21 +211,7 @@ namespace Snog.Audio
             poolGO.transform.parent = transform;
 
             fxPool = poolGO.AddComponent<AudioSourcePool>();
-
-            var init = fxPool.GetType().GetMethod(
-                "Initialize",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
-            );
-
-            if (init != null)
-            {
-                init.Invoke(fxPool, new object[] { fxPoolSize, fxGroup });
-            }
-            else
-            {
-                fxPool.poolSize = fxPoolSize;
-                fxPool.fxGroup = fxGroup;
-            }
+            fxPool.Initialize(fxPoolSize, fxGroup);
         }
 
         #endregion
