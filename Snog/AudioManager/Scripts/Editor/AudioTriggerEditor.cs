@@ -219,14 +219,17 @@ namespace Snog.Audio.Editor
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (action == AudioTrigger.TriggerAudioAction.Play && GUILayout.Button("▶ Play"))
-                    manager.PlayMusic(mt.trackName, 0f, 0f);
+                using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
+                {
+                    if (action == AudioTrigger.TriggerAudioAction.Play && GUILayout.Button("▶ Play"))
+                        manager.PlayMusic(mt.trackName, 0f, 0f);
 
-                if (action == AudioTrigger.TriggerAudioAction.PlayFadeIn && GUILayout.Button("🌅 Fade In"))
-                    manager.PlayMusic(mt.trackName, 0f, fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
+                    if (action == AudioTrigger.TriggerAudioAction.PlayFadeIn && GUILayout.Button("🌅 Fade In"))
+                        manager.PlayMusic(mt.trackName, 0f, fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
 
-                if (action == AudioTrigger.TriggerAudioAction.StopMusic && GUILayout.Button("⏹ Stop"))
-                    manager.StopMusic(fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
+                    if (action == AudioTrigger.TriggerAudioAction.StopMusic && GUILayout.Button("⏹ Stop"))
+                        manager.StopMusic(fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
+                }
             }
         }
 

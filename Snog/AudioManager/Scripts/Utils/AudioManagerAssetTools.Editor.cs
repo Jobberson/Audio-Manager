@@ -222,17 +222,14 @@ namespace Snog.Audio
                 if (isMusic)
                 {
                     string assetName = SanitizeAssetName(fileName);
-                    string assetPath = $"{musicFolder}/{assetName}.asset";
+                    string assetPath = GetUniqueAssetPath(musicFolder, assetName);
 
-                    if (AssetDatabase.LoadAssetAtPath<MusicTrack>(assetPath) == null)
-                    {
-                        var mt = ScriptableObject.CreateInstance<MusicTrack>();
-                        mt.trackName = fileName;
-                        mt.clip = clip;
-                        mt.description = $"Generated from {clipPath}";
-                        AssetDatabase.CreateAsset(mt, assetPath);
-                        createdMusic++;
-                    }
+                    var mt = ScriptableObject.CreateInstance<MusicTrack>();
+                    mt.trackName = fileName;
+                    mt.clip = clip;
+                    mt.description = $"Generated from {clipPath}";
+                    AssetDatabase.CreateAsset(mt, assetPath);
+                    createdMusic++;
 
                     continue;
                 }
@@ -240,17 +237,14 @@ namespace Snog.Audio
                 if (isAmbient)
                 {
                     string assetName = SanitizeAssetName(fileName);
-                    string assetPath = $"{ambientFolder}/{assetName}.asset";
+                    string assetPath = GetUniqueAssetPath(ambientFolder, assetName);
 
-                    if (AssetDatabase.LoadAssetAtPath<AmbientTrack>(assetPath) == null)
-                    {
-                        var at = ScriptableObject.CreateInstance<AmbientTrack>();
-                        at.trackName = fileName;
-                        at.clip = clip;
-                        at.description = $"Generated from {clipPath}";
-                        AssetDatabase.CreateAsset(at, assetPath);
-                        createdAmbient++;
-                    }
+                    var at = ScriptableObject.CreateInstance<AmbientTrack>();
+                    at.trackName = fileName;
+                    at.clip = clip;
+                    at.description = $"Generated from {clipPath}";
+                    AssetDatabase.CreateAsset(at, assetPath);
+                    createdAmbient++;
 
                     continue;
                 }
@@ -300,12 +294,7 @@ namespace Snog.Audio
                     (float)groupIndex / Mathf.Max(1, sfxGroups.Count)
                 );
 
-                string assetPath = $"{sfxFolder}/{kv.Key}.asset";
-
-                if (AssetDatabase.LoadAssetAtPath<SoundClipData>(assetPath) != null)
-                {
-                    continue;
-                }
+                string assetPath = GetUniqueAssetPath(sfxFolder, kv.Key);
 
                 var sd = ScriptableObject.CreateInstance<SoundClipData>();
                 sd.soundName = kv.Key;
@@ -445,6 +434,32 @@ namespace Snog.Audio
                 .ToArray());
 
             return clean.Trim().Replace(' ', '_').ToLower();
+        }
+
+        private string GetUniqueAssetPath(string folder, string baseName)
+        {
+            folder = folder.TrimEnd('/');
+            baseName = SanitizeAssetName(baseName);
+
+            string path = $"{folder}/{baseName}.asset";
+            if (AssetDatabase.LoadAssetAtPath<Object>(path) == null)
+            {
+                return path;
+            }
+
+            int suffix = 1;
+
+            while (true)
+            {
+                string candidate = $"{folder}/{baseName}_{suffix:00}.asset";
+
+                if (AssetDatabase.LoadAssetAtPath<Object>(candidate) == null)
+                {
+                    return candidate;
+                }
+
+                suffix++;
+            }
         }
         #endregion
     }

@@ -252,9 +252,12 @@ namespace Snog.Audio.Editor
 
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            if (GUILayout.Button("▶ Play 2D (Runtime)"))
+                            using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                             {
-                                manager.PlaySfx2D(soundNames[selectedSoundIndex]);
+                                if (GUILayout.Button("▶ Play 2D (Runtime)"))
+                                {
+                                    manager.PlaySfx2D(soundNames[selectedSoundIndex]);
+                                }
                             }
 
                             if (GUILayout.Button("🎧 Preview (Editor)"))
@@ -264,10 +267,13 @@ namespace Snog.Audio.Editor
                         }
 
                         soundPosition = EditorGUILayout.Vector3Field("3D Position", soundPosition);
-
-                        if (GUILayout.Button("📍 Play 3D (Runtime)"))
+                        
+                        using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                         {
-                            manager.PlaySfx3D(soundNames[selectedSoundIndex], soundPosition);
+                            if (GUILayout.Button("📍 Play 3D (Runtime)"))
+                            {
+                                manager.PlaySfx3D(soundNames[selectedSoundIndex], soundPosition);
+                            }
                         }
                     }
                 }
@@ -295,9 +301,12 @@ namespace Snog.Audio.Editor
 
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            if (GUILayout.Button("▶ Play (Runtime)"))
+                            using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                             {
-                                manager.PlayMusic(musicNames[selectedMusicIndex], playDelay, musicFadeIn);
+                                if (GUILayout.Button("▶ Play (Runtime)"))
+                                {
+                                    manager.PlayMusic(musicNames[selectedMusicIndex], playDelay, musicFadeIn);
+                                }
                             }
 
                             if (GUILayout.Button("🎧 Preview (Editor)"))
@@ -305,10 +314,12 @@ namespace Snog.Audio.Editor
                                 PlayPreviewFromMusicName(musicNames[selectedMusicIndex]);
                             }
                         }
-
-                        if (GUILayout.Button("⏹ Stop (Runtime)"))
+                        using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                         {
-                            manager.StopMusic(musicFadeOut);
+                            if (GUILayout.Button("⏹ Stop (Runtime)"))
+                            {
+                                manager.StopMusic(musicFadeOut);
+                            }
                         }
                     }
                 }
@@ -340,14 +351,17 @@ namespace Snog.Audio.Editor
                     {
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            if (GUILayout.Button("✅ Set Profile"))
+                            using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                             {
-                                manager.SetAmbientProfile(ambientProfileReplace, fadeDuration);
-                            }
+                                if (GUILayout.Button("✅ Set Profile"))
+                                {
+                                    manager.SetAmbientProfile(ambientProfileReplace, fadeDuration);
+                                }
 
-                            if (GUILayout.Button("🧹 Clear Ambient"))
-                            {
-                                manager.ClearAmbient(fadeDuration);
+                                if (GUILayout.Button("🧹 Clear Ambient"))
+                                {
+                                    manager.ClearAmbient(fadeDuration);
+                                }
                             }
                         }
                     }
@@ -473,10 +487,12 @@ namespace Snog.Audio.Editor
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
                     selectedSnapshotIndex = EditorGUILayout.Popup("Snapshot", selectedSnapshotIndex, snapshotOptions);
-
-                    if (GUILayout.Button("🔀 Switch Snapshot"))
+                    using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                     {
-                        manager.TransitionToSnapshot((AudioManager.SnapshotType)selectedSnapshotIndex, 1f);
+                        if (GUILayout.Button("🔀 Switch Snapshot"))
+                        {
+                            manager.TransitionToSnapshot((AudioManager.SnapshotType)selectedSnapshotIndex, 1f);
+                        }
                     }
                 }
             }
