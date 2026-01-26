@@ -11,7 +11,6 @@ namespace Snog.Audio.Clips
 
         [Header("Audio")]
         public AudioClip clip;
-        public bool loop = true;
 
         [Header("Metadata")]
         [TextArea] public string description;

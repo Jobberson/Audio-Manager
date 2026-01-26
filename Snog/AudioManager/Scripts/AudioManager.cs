@@ -79,10 +79,7 @@ namespace Snog.Audio
 
         #endregion
 
-        #region Music / FX
-
-        [Header("Music")]
-        [SerializeField] private bool musicLoop = true;
+        #region SFX
 
         [Header("3D FX Pool")]
         [SerializeField] private int fxPoolSize = 10;
@@ -182,7 +179,7 @@ namespace Snog.Audio
         #endregion
 
         #region Initialization
-
+     
         private void CreateCoreSources()
         {
             GameObject fxGO = new GameObject("FX 2D");
@@ -195,7 +192,6 @@ namespace Snog.Audio
             musicGO.transform.parent = transform;
             musicSource = musicGO.AddComponent<AudioSource>();
             musicSource.playOnAwake = false;
-            musicSource.loop = musicLoop;
             musicSource.spatialBlend = 0f;
         }
 
@@ -309,16 +305,22 @@ namespace Snog.Audio
         #endregion
 
         #region Music API
-
+     
         public void PlayMusic(string trackName, float delay = 0f, float fadeIn = 0f)
         {
-            if (musicLibrary == null || musicSource == null) return;
+            if (musicLibrary == null || musicSource == null)
+            {
+                return;
+            }
 
-            AudioClip clip = musicLibrary.GetClipFromName(trackName);
-            if (clip == null) return;
+            MusicTrack track = musicLibrary.GetTrackFromName(trackName);
+            if (track == null || track.clip == null)
+            {
+                return;
+            }
 
-            musicSource.loop = musicLoop;
-            musicSource.clip = clip;
+            musicSource.clip = track.clip;
+            musicSource.loop = track.loop;
 
             ApplyMixerRouting();
 

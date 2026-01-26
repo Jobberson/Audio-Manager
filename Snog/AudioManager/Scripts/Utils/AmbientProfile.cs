@@ -18,7 +18,6 @@ namespace Snog.Audio.Utils
         public int priority = 0;
 
         [Header("Playback")]
-        public bool loop = true;
         public bool randomStartTime = true;
 
         [Header("Pitch (random)")]

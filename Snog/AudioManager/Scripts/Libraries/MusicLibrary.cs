@@ -1,5 +1,4 @@
-﻿﻿// MusicLibrary.cs (patched)
-using UnityEngine;
+﻿﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using Snog.Audio.Clips;
@@ -15,22 +14,21 @@ namespace Snog.Audio.Libraries
         [Header("ScriptableObject Music Clips")]
         public List<MusicTrack> tracks = new();
 
-        private Dictionary<string, AudioClip> musicDictionary = new();
+        private Dictionary<string, MusicTrack> musicDictionary = new();
         private bool built = false;
 
         private void Awake()
         {
-            // Build now for runtime usage
             BuildDictionary();
             built = true;
         }
 
-        /// <summary>
-        /// Ensure the internal dictionary is built. Safe to call in editor or runtime.
-        /// </summary>
         private void EnsureBuilt()
         {
-            if (built) return;
+            if (built)
+            {
+                return;
+            }
 
             BuildDictionary();
 
@@ -42,11 +40,26 @@ namespace Snog.Audio.Libraries
                 {
                     string path = AssetDatabase.GUIDToAssetPath(g);
                     var asset = AssetDatabase.LoadAssetAtPath<MusicTrack>(path);
-                    if (asset == null) continue;
-                    if (string.IsNullOrEmpty(asset.trackName)) continue;
-                    if (asset.clip == null) continue;
+
+                    if (asset == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(asset.trackName))
+                    {
+                        continue;
+                    }
+
+                    if (asset.clip == null)
+                    {
+                        continue;
+                    }
+
                     if (!musicDictionary.ContainsKey(asset.trackName))
-                        musicDictionary[asset.trackName] = asset.clip;
+                    {
+                        musicDictionary[asset.trackName] = asset;
+                    }
                 }
             }
             catch (System.Exception ex)
@@ -66,20 +79,47 @@ namespace Snog.Audio.Libraries
             {
                 foreach (var m in tracks)
                 {
-                    if (m == null) continue;
-                    if (string.IsNullOrEmpty(m.trackName)) continue;
-                    if (m.clip == null) continue;
-                    musicDictionary[m.trackName] = m.clip;
+                    if (m == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(m.trackName))
+                    {
+                        continue;
+                    }
+
+                    if (m.clip == null)
+                    {
+                        continue;
+                    }
+
+                    musicDictionary[m.trackName] = m;
                 }
             }
         }
 
+        public MusicTrack GetTrackFromName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            EnsureBuilt();
+
+            if (musicDictionary.TryGetValue(name, out var track))
+            {
+                return track;
+            }
+
+            return null;
+        }
+
         public AudioClip GetClipFromName(string name)
         {
-            if (string.IsNullOrEmpty(name)) return null;
-            EnsureBuilt();
-            if (musicDictionary.TryGetValue(name, out var clip)) return clip;
-            return null;
+            MusicTrack track = GetTrackFromName(name);
+            return track != null ? track.clip : null;
         }
 
         public string[] GetAllClipNames()
@@ -88,13 +128,6 @@ namespace Snog.Audio.Libraries
             return musicDictionary.Keys.OrderBy(k => k).ToArray();
         }
 
-        // -------------------------
-        // Public rebuild helpers
-        // -------------------------
-        /// <summary>
-        /// Public API to force the library to rebuild (safe to call from editor code).
-        /// Call this after creating/assigning new MusicTrack assets.
-        /// </summary>
         public void RebuildDictionaries()
         {
             built = false;
@@ -113,7 +146,6 @@ namespace Snog.Audio.Libraries
             RebuildDictionaries();
         }
 
-        // Run when edited in inspector — mark cache dirty so next query rebuilds.
         private void OnValidate()
         {
             built = false;
