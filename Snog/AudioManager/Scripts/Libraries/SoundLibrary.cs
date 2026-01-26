@@ -31,6 +31,7 @@ namespace Snog.Audio.Libraries
         private void Awake()
         {
             BuildDictionary();
+            built = true;
         }
 
         /// <summary>
