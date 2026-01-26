@@ -108,6 +108,10 @@ namespace Snog.Audio
         [Tooltip("Optional override for listener transform. If null, auto-detects AudioListener.")]
         [SerializeField] private Transform listenerOverride;
 
+        private readonly List<ScoredEmitter> scoredCache = new List<ScoredEmitter>(64);
+        private readonly HashSet<AmbientEmitter> allowedCache = new HashSet<AmbientEmitter>();
+        private readonly HashSet<AmbientTrack> usedTracksCache = new HashSet<AmbientTrack>();
+
         #endregion
 
         #region Editor Tools State 
@@ -163,7 +167,6 @@ namespace Snog.Audio
             CreateCoreSources();
             ApplyMixerRouting();
             ApplyAllMixerVolumes();
-            InitializeFxPoolIfNeeded();
 
             StartAmbientLoopIfNeeded();
         }
@@ -175,7 +178,6 @@ namespace Snog.Audio
             GetLibraries();
         }
 #endif
-
 
         #endregion
 
@@ -285,6 +287,7 @@ namespace Snog.Audio
             {
                 Debug.LogWarning("AudioManager: SoundLibrary or fx2DSource is null. Cannot play SFX 2D.");
                 GetLibraries();
+                return;
             }
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
@@ -511,6 +514,12 @@ namespace Snog.Audio
             {
                 CleanupEmitters();
 
+                if (emitters.Count == 0 && ambientStack.Count == 0)
+                {
+                    ambientLoopCo = null;
+                    yield break;
+                }
+
                 if (Time.unscaledTime >= ambientNextRescoreTime)
                 {
                     ApplyAmbientTargets();
@@ -521,7 +530,11 @@ namespace Snog.Audio
 
                 for (int i = 0; i < emitters.Count; i++)
                 {
-                    if (emitters[i] == null) continue;
+                    if (emitters[i] == null)
+                    {
+                        continue;
+                    }
+
                     emitters[i].StepVolume(Time.deltaTime, ambientCurrentFade, globalGain);
                 }
 
@@ -563,6 +576,7 @@ namespace Snog.Audio
             return null;
         }
 
+        
         private void ApplyAmbientTargets()
         {
             desiredVolumeByTrack.Clear();
@@ -571,13 +585,18 @@ namespace Snog.Audio
             for (int s = 0; s < ambientStack.Count; s++)
             {
                 AmbientStackEntry entry = ambientStack[s];
-                if (entry == null || entry.profile == null || entry.profile.layers == null) continue;
+
+                if (entry == null || entry.profile == null || entry.profile.layers == null)
+                {
+                    continue;
+                }
 
                 AmbientLayer[] layers = entry.profile.layers;
 
                 for (int i = 0; i < layers.Length; i++)
                 {
                     AmbientLayer layer = layers[i];
+
                     if (layer == null)
                     {
                         Debug.LogWarning("[AudioManager] AmbientLayer is null in profile.", entry.profile);
@@ -595,7 +614,6 @@ namespace Snog.Audio
                         Debug.LogWarning($"[AudioManager] AmbientTrack '{layer.track.name}' has no clip assigned.", layer.track);
                         continue;
                     }
-
 
                     float v = Mathf.Clamp01(layer.volume);
 
@@ -615,11 +633,13 @@ namespace Snog.Audio
             Transform listener = GetListenerTransform();
             Vector3 listenerPos = listener != null ? listener.position : Vector3.zero;
 
-            List<ScoredEmitter> scored = new List<ScoredEmitter>(emitters.Count);
+            scoredCache.Clear();
+            scoredCache.Capacity = Mathf.Max(scoredCache.Capacity, emitters.Count);
 
             for (int i = 0; i < emitters.Count; i++)
             {
                 AmbientEmitter em = emitters[i];
+
                 if (em == null || em.Track == null)
                 {
                     continue;
@@ -631,12 +651,11 @@ namespace Snog.Audio
                     se.emitter = em;
                     se.score = float.NegativeInfinity;
                     se.targetVolume01 = 0f;
-                    scored.Add(se);
+                    scoredCache.Add(se);
                     continue;
                 }
 
                 int trackPriority = desiredPriorityByTrack.TryGetValue(em.Track, out int p) ? p : 0;
-
                 float dist = listener != null ? Vector3.Distance(listenerPos, em.transform.position) : 0f;
                 float audibility = 1f / (1f + dist);
 
@@ -646,49 +665,68 @@ namespace Snog.Audio
                 sEntry.emitter = em;
                 sEntry.score = score;
                 sEntry.targetVolume01 = baseVol01;
-                scored.Add(sEntry);
+                scoredCache.Add(sEntry);
             }
 
-            scored.Sort((a, b) => b.score.CompareTo(a.score));
+            scoredCache.Sort((a, b) => b.score.CompareTo(a.score));
 
             int cap = Mathf.Clamp(maxAmbientVoices, 1, 128);
-            HashSet<AmbientEmitter> allowed = new HashSet<AmbientEmitter>();
+
+            allowedCache.Clear();
 
             if (allowMultipleEmittersPerTrack)
             {
-                for (int i = 0; i < scored.Count && allowed.Count < cap; i++)
+                for (int i = 0; i < scoredCache.Count && allowedCache.Count < cap; i++)
                 {
-                    if (scored[i].score == float.NegativeInfinity) continue;
-                    allowed.Add(scored[i].emitter);
+                    if (scoredCache[i].score == float.NegativeInfinity)
+                    {
+                        continue;
+                    }
+
+                    allowedCache.Add(scoredCache[i].emitter);
                 }
             }
             else
             {
-                HashSet<AmbientTrack> usedTracks = new HashSet<AmbientTrack>();
+                usedTracksCache.Clear();
 
-                for (int i = 0; i < scored.Count && allowed.Count < cap; i++)
+                for (int i = 0; i < scoredCache.Count && allowedCache.Count < cap; i++)
                 {
-                    if (scored[i].score == float.NegativeInfinity) continue;
+                    if (scoredCache[i].score == float.NegativeInfinity)
+                    {
+                        continue;
+                    }
 
-                    AmbientTrack t = scored[i].emitter.Track;
-                    if (t == null) continue;
+                    AmbientTrack t = scoredCache[i].emitter.Track;
 
-                    if (usedTracks.Contains(t)) continue;
+                    if (t == null)
+                    {
+                        continue;
+                    }
 
-                    usedTracks.Add(t);
-                    allowed.Add(scored[i].emitter);
+                    if (usedTracksCache.Contains(t))
+                    {
+                        continue;
+                    }
+
+                    usedTracksCache.Add(t);
+                    allowedCache.Add(scoredCache[i].emitter);
                 }
             }
 
-            for (int i = 0; i < scored.Count; i++)
+            for (int i = 0; i < scoredCache.Count; i++)
             {
-                AmbientEmitter em = scored[i].emitter;
-                if (em == null) continue;
+                AmbientEmitter em = scoredCache[i].emitter;
 
-                if (allowed.Contains(em))
+                if (em == null)
+                {
+                    continue;
+                }
+
+                if (allowedCache.Contains(em))
                 {
                     em.EnsurePlaying(ambientGroup);
-                    em.SetTargetVolume01(scored[i].targetVolume01);
+                    em.SetTargetVolume01(scoredCache[i].targetVolume01);
                 }
                 else
                 {
@@ -696,13 +734,16 @@ namespace Snog.Audio
                 }
             }
 
-            // Any emitters not in scored list still need to be faded out if not desired
             for (int i = 0; i < emitters.Count; i++)
             {
                 AmbientEmitter em = emitters[i];
-                if (em == null) continue;
 
-                if (!allowed.Contains(em) && !desiredVolumeByTrack.ContainsKey(em.Track))
+                if (em == null)
+                {
+                    continue;
+                }
+
+                if (!allowedCache.Contains(em) && !desiredVolumeByTrack.ContainsKey(em.Track))
                 {
                     em.SetTargetVolume01(0f);
                 }
