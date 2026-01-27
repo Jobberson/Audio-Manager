@@ -88,7 +88,7 @@ ScriptableObject-driven libraries store your audio references by name:
 
 `AmbientProfile` is a layered ambience recipe:
 
-*   each `AmbientLayer` references an `AmbientTrack` and defines mix/playback settings (volume, spatialBlend, loop, random start, pitch range).
+*   each `AmbientLayer` references an `AmbientTrack` and defines mix/playback settings (volume, spatialBlend, random start, pitch range).
 
 ### Ambient Zones
 
