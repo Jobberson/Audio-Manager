@@ -430,7 +430,7 @@ namespace Snog.Audio
 
         public void SetAmbientProfile(AmbientProfile profile, float fade = -1f)
         {
-            Debug.Log($"[AudioManager] SetAmbientProfile called -> {(profile != null ? profile.name : "null")}", profile);
+            Debug.Log($"AudioManager: SetAmbientProfile called -> {(profile != null ? profile.name : "null")}", profile);
 
             float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
 
@@ -618,21 +618,28 @@ namespace Snog.Audio
 
                     if (layer == null)
                     {
-                        Debug.LogWarning("[AudioManager] AmbientLayer is null in profile.", entry.profile);
+                        Debug.LogWarning("AudioManager: AmbientLayer is null in profile.", entry.profile);
                         continue;
                     }
 
                     if (layer.track == null)
                     {
-                        Debug.LogWarning($"[AudioManager] AmbientLayer has no track in profile '{entry.profile.name}'.", entry.profile);
+                        Debug.LogWarning($"AudioManager: AmbientLayer has no track in profile '{entry.profile.name}'.", entry.profile);
                         continue;
                     }
 
                     if (layer.track.clip == null)
                     {
-                        Debug.LogWarning($"[AudioManager] AmbientTrack '{layer.track.name}' has no clip assigned.", layer.track);
+                        Debug.LogWarning($"AudioManager: AmbientTrack '{layer.track.name}' has no clip assigned.", layer.track);
                         continue;
                     }
+
+                    int combinedPriority = entry.priority + layer.priority;
+
+                    if (!desiredPriorityByTrack.ContainsKey(layer.track))
+                        desiredPriorityByTrack[layer.track] = combinedPriority;
+                    else
+                        desiredPriorityByTrack[layer.track] = Mathf.Max(desiredPriorityByTrack[layer.track], combinedPriority);
 
                     float v = Mathf.Clamp01(layer.volume);
 
