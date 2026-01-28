@@ -2,7 +2,6 @@
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
-
 using Snog.Audio.Clips;
 using Snog.Scripts;
 
@@ -30,11 +29,19 @@ namespace Snog.Audio.Editor
         // Params
         private SerializedProperty playDelayProp;
         private SerializedProperty fadeDurationProp;
+
+        // 3D override (new/optional)
+        private SerializedProperty useOverride3DPositionProp;
         private SerializedProperty override3DPositionProp;
 
+        // Preview reflection
         private static System.Type audioUtilType;
         private static MethodInfo playPreviewMethod;
         private static MethodInfo stopAllPreviewMethod;
+
+        private static bool previewInitialized;
+        private static bool previewSupported;
+        private static string previewUnsupportedReason;
 
         private void OnEnable()
         {
@@ -42,19 +49,24 @@ namespace Snog.Audio.Editor
 
             // Try both capitalization variants to be resilient to field-name differences
             tagToCompareProp = serializedObject.FindProperty("tagToCompare") ?? serializedObject.FindProperty("TagToCompare");
-            fireOnEnterProp  = serializedObject.FindProperty("fireOnEnter") ?? serializedObject.FindProperty("FireOnEnter");
-            fireOnExitProp   = serializedObject.FindProperty("fireOnExit") ?? serializedObject.FindProperty("FireOnExit");
+            fireOnEnterProp = serializedObject.FindProperty("fireOnEnter") ?? serializedObject.FindProperty("FireOnEnter");
+            fireOnExitProp = serializedObject.FindProperty("fireOnExit") ?? serializedObject.FindProperty("FireOnExit");
 
             audioTypeProp = serializedObject.FindProperty("audioType") ?? serializedObject.FindProperty("AudioType");
-            actionProp    = serializedObject.FindProperty("action") ?? serializedObject.FindProperty("Action");
+            actionProp = serializedObject.FindProperty("action") ?? serializedObject.FindProperty("Action");
 
-            sfxClipProp      = serializedObject.FindProperty("sfxClip") ?? serializedObject.FindProperty("SfxClip");
-            musicTrackProp   = serializedObject.FindProperty("musicTrack") ?? serializedObject.FindProperty("MusicTrack");
+            sfxClipProp = serializedObject.FindProperty("sfxClip") ?? serializedObject.FindProperty("SfxClip");
+            musicTrackProp = serializedObject.FindProperty("musicTrack") ?? serializedObject.FindProperty("MusicTrack");
             ambientTrackProp = serializedObject.FindProperty("ambientTrack") ?? serializedObject.FindProperty("AmbientTrack");
 
-            playDelayProp          = serializedObject.FindProperty("playDelay") ?? serializedObject.FindProperty("PlayDelay");
-            fadeDurationProp       = serializedObject.FindProperty("fadeDuration") ?? serializedObject.FindProperty("FadeDuration");
+            playDelayProp = serializedObject.FindProperty("playDelay") ?? serializedObject.FindProperty("PlayDelay");
+            fadeDurationProp = serializedObject.FindProperty("fadeDuration") ?? serializedObject.FindProperty("FadeDuration");
+
+            // NEW: optional toggle field for override control
+            useOverride3DPositionProp = serializedObject.FindProperty("useOverride3DPosition") ?? serializedObject.FindProperty("UseOverride3DPosition");
             override3DPositionProp = serializedObject.FindProperty("override3DPosition") ?? serializedObject.FindProperty("Override3DPosition");
+
+            InitializePreviewReflection();
         }
 
         public override void OnInspectorGUI()
@@ -62,14 +74,24 @@ namespace Snog.Audio.Editor
             serializedObject.Update();
 
             DrawHeaderStatus();
-            EditorGUILayout.Space(6);
 
+            if (!previewSupported)
+            {
+                EditorGUILayout.HelpBox(
+                    string.IsNullOrEmpty(previewUnsupportedReason)
+                        ? "Audio preview is not supported in this Unity version."
+                        : $"Audio preview is not supported: {previewUnsupportedReason}",
+                    MessageType.Info
+                );
+            }
+
+            EditorGUILayout.Space(6);
             DrawGeneralSection();
-            EditorGUILayout.Space(6);
 
+            EditorGUILayout.Space(6);
             DrawSelectionSection();
-            EditorGUILayout.Space(6);
 
+            EditorGUILayout.Space(6);
             DrawPlaybackSection();
 
             serializedObject.ApplyModifiedProperties();
@@ -84,7 +106,6 @@ namespace Snog.Audio.Editor
             var manager = FindObjectOfType<AudioManager>();
 #pragma warning restore CS0618
 #endif
-
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 if (manager != null)
@@ -106,9 +127,13 @@ namespace Snog.Audio.Editor
                 EditorGUILayout.LabelField("General", EditorStyles.boldLabel);
 
                 if (tagToCompareProp != null)
+                {
                     EditorGUILayout.PropertyField(tagToCompareProp, new GUIContent("Tag To Compare"));
+                }
                 else
+                {
                     EditorGUILayout.HelpBox("Field 'tagToCompare' not found on AudioTrigger. Inspector cannot edit tag filter.", MessageType.Info);
+                }
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -125,9 +150,14 @@ namespace Snog.Audio.Editor
                 EditorGUILayout.LabelField("Selection", EditorStyles.boldLabel);
 
                 if (audioTypeProp != null)
+                {
                     EditorGUILayout.PropertyField(audioTypeProp, new GUIContent("Audio Type"));
+                }
+
                 if (actionProp != null)
+                {
                     EditorGUILayout.PropertyField(actionProp, new GUIContent("Action"));
+                }
 
                 // Defensive: if either prop is missing, bail out gracefully
                 if (audioTypeProp == null || actionProp == null)
@@ -137,7 +167,7 @@ namespace Snog.Audio.Editor
                 }
 
                 var type = (AudioTrigger.TriggerAudioType)audioTypeProp.enumValueIndex;
-                var act  = (AudioTrigger.TriggerAudioAction)actionProp.enumValueIndex;
+                var act = (AudioTrigger.TriggerAudioAction)actionProp.enumValueIndex;
 
                 EditorGUILayout.Space(4);
 
@@ -161,7 +191,9 @@ namespace Snog.Audio.Editor
         private void DrawSfxSection(AudioTrigger.TriggerAudioAction action)
         {
             if (sfxClipProp != null)
+            {
                 EditorGUILayout.PropertyField(sfxClipProp, new GUIContent("SFX (SoundClipData)"));
+            }
             else
             {
                 EditorGUILayout.HelpBox("Field 'sfxClip' not found on AudioTrigger.", MessageType.Info);
@@ -175,22 +207,58 @@ namespace Snog.Audio.Editor
                 return;
             }
 
-            if (GUILayout.Button("🎧 Preview First Variant"))
+            using (new EditorGUI.DisabledScope(!previewSupported))
             {
-                PlayPreviewSafe(so.clips[0]);
+                if (GUILayout.Button("🎧 Preview First Variant"))
+                {
+                    PlayPreviewSafe(so.clips[0]);
+                }
             }
 
             if (action == AudioTrigger.TriggerAudioAction.Play3D)
             {
-                if (override3DPositionProp != null)
-                    EditorGUILayout.PropertyField(override3DPositionProp, new GUIContent("Override 3D Position"));
+                EditorGUILayout.Space(4);
+
+                // If the runtime has the toggle, show it and conditionally show the vector.
+                // If not, gracefully fall back to always showing the vector field (old behavior).
+                if (useOverride3DPositionProp != null)
+                {
+                    EditorGUILayout.PropertyField(useOverride3DPositionProp, new GUIContent("Use Override 3D Position"));
+
+                    if (useOverride3DPositionProp.boolValue)
+                    {
+                        if (override3DPositionProp != null)
+                        {
+                            EditorGUILayout.PropertyField(override3DPositionProp, new GUIContent("Override 3D Position"));
+                        }
+                        else
+                        {
+                            EditorGUILayout.HelpBox("Field 'override3DPosition' not found on AudioTrigger.", MessageType.Info);
+                        }
+                    }
+                }
+                else
+                {
+                    // Backward compatibility: old trigger script uses Vector3.zero sentinel
+                    if (override3DPositionProp != null)
+                    {
+                        EditorGUILayout.PropertyField(override3DPositionProp, new GUIContent("Override 3D Position"));
+                        EditorGUILayout.HelpBox("Tip: Consider adding 'useOverride3DPosition' bool to avoid Vector3.zero-as-sentinel behavior.", MessageType.None);
+                    }
+                    else
+                    {
+                        EditorGUILayout.HelpBox("Field 'override3DPosition' not found on AudioTrigger.", MessageType.Info);
+                    }
+                }
             }
         }
 
         private void DrawMusicSection(AudioTrigger.TriggerAudioAction action)
         {
             if (musicTrackProp != null)
+            {
                 EditorGUILayout.PropertyField(musicTrackProp, new GUIContent("Music Track"));
+            }
             else
             {
                 EditorGUILayout.HelpBox("Field 'musicTrack' not found on AudioTrigger.", MessageType.Info);
@@ -204,8 +272,13 @@ namespace Snog.Audio.Editor
                 return;
             }
 
-            if (GUILayout.Button("🎧 Preview"))
-                PlayPreviewSafe(mt.clip);
+            using (new EditorGUI.DisabledScope(!previewSupported))
+            {
+                if (GUILayout.Button("🎧 Preview"))
+                {
+                    PlayPreviewSafe(mt.clip);
+                }
+            }
 
 #if UNITY_2023_1_OR_NEWER
             var manager = FindAnyObjectByType<AudioManager>();
@@ -214,7 +287,6 @@ namespace Snog.Audio.Editor
             var manager = FindObjectOfType<AudioManager>();
 #pragma warning restore CS0618
 #endif
-
             if (manager == null) return;
 
             using (new EditorGUILayout.HorizontalScope())
@@ -222,13 +294,19 @@ namespace Snog.Audio.Editor
                 using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                 {
                     if (action == AudioTrigger.TriggerAudioAction.Play && GUILayout.Button("▶ Play"))
+                    {
                         manager.PlayMusic(mt.trackName, 0f, 0f);
+                    }
 
                     if (action == AudioTrigger.TriggerAudioAction.PlayFadeIn && GUILayout.Button("🌅 Fade In"))
+                    {
                         manager.PlayMusic(mt.trackName, 0f, fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
+                    }
 
                     if (action == AudioTrigger.TriggerAudioAction.StopMusic && GUILayout.Button("⏹ Stop"))
+                    {
                         manager.StopMusic(fadeDurationProp != null ? fadeDurationProp.floatValue : 0f);
+                    }
                 }
             }
         }
@@ -236,7 +314,9 @@ namespace Snog.Audio.Editor
         private void DrawAmbientSection(AudioTrigger.TriggerAudioAction action)
         {
             if (ambientTrackProp != null)
+            {
                 EditorGUILayout.PropertyField(ambientTrackProp, new GUIContent("Ambient Track"));
+            }
             else
             {
                 EditorGUILayout.HelpBox("Field 'ambientTrack' not found on AudioTrigger.", MessageType.Info);
@@ -250,8 +330,13 @@ namespace Snog.Audio.Editor
                 return;
             }
 
-            if (GUILayout.Button("🎧 Preview"))
-                PlayPreviewSafe(at.clip);
+            using (new EditorGUI.DisabledScope(!previewSupported))
+            {
+                if (GUILayout.Button("🎧 Preview"))
+                {
+                    PlayPreviewSafe(at.clip);
+                }
+            }
         }
 
         private void DrawPlaybackSection()
@@ -261,41 +346,78 @@ namespace Snog.Audio.Editor
                 EditorGUILayout.LabelField("Playback Parameters", EditorStyles.boldLabel);
 
                 if (playDelayProp != null)
+                {
                     EditorGUILayout.PropertyField(playDelayProp, new GUIContent("Play Delay (sec)"));
+                }
                 else
+                {
                     EditorGUILayout.HelpBox("Field 'playDelay' not found on AudioTrigger.", MessageType.Info);
+                }
 
                 if (fadeDurationProp != null)
+                {
                     EditorGUILayout.PropertyField(fadeDurationProp, new GUIContent("Fade Duration (sec)"));
+                }
+            }
+        }
+
+        private void InitializePreviewReflection()
+        {
+            if (previewInitialized)
+            {
+                return;
+            }
+
+            previewInitialized = true;
+
+            try
+            {
+                audioUtilType = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
+                if (audioUtilType == null)
+                {
+                    previewSupported = false;
+                    previewUnsupportedReason = "UnityEditor.AudioUtil type not found.";
+                    return;
+                }
+
+                playPreviewMethod = audioUtilType.GetMethod(
+                    "PlayPreviewClip",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
+                );
+
+                stopAllPreviewMethod = audioUtilType.GetMethod(
+                    "StopAllPreviewClips",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
+                );
+
+                previewSupported = playPreviewMethod != null && stopAllPreviewMethod != null;
+                if (!previewSupported)
+                {
+                    previewUnsupportedReason = "Preview methods not found (Unity changed internal API).";
+                }
+            }
+            catch (System.Exception ex)
+            {
+                previewSupported = false;
+                previewUnsupportedReason = ex.Message;
             }
         }
 
         private void PlayPreviewSafe(AudioClip clip)
         {
-            if (clip == null) return;
+            if (clip == null)
+            {
+                return;
+            }
+
+            if (!previewSupported)
+            {
+                Debug.LogWarning("Audio preview is not supported in this Unity version.");
+                return;
+            }
 
             try
             {
-                if (audioUtilType == null)
-                {
-                    audioUtilType = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
-                    if (audioUtilType != null)
-                    {
-                        playPreviewMethod = audioUtilType.GetMethod(
-                            "PlayPreviewClip",
-                            BindingFlags.Static |
-                            BindingFlags.Public |
-                            BindingFlags.NonPublic
-                        );
-                        stopAllPreviewMethod = audioUtilType.GetMethod(
-                            "StopAllPreviewClips",
-                            BindingFlags.Static |
-                            BindingFlags.Public |
-                            BindingFlags.NonPublic
-                        );
-                    }
-                }
-
                 stopAllPreviewMethod?.Invoke(null, null);
                 playPreviewMethod?.Invoke(null, new object[] { clip, 0, false });
             }
