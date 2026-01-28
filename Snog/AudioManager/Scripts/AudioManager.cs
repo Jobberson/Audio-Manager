@@ -164,6 +164,7 @@ namespace Snog.Audio
             CreateCoreSources();
             ApplyMixerRouting();
             ApplyAllMixerVolumes();
+            InitializeFxPoolIfNeeded();
 
             StartAmbientLoopIfNeeded();
         }
@@ -286,20 +287,36 @@ namespace Snog.Audio
                 return;
             }
 
+            InitializeFxPoolIfNeeded();
+
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
             if (clip == null) return;
 
             fx2DSource.PlayOneShot(clip);
         }
 
-        public void PlaySfx3D(string soundName, Vector3 position)
+        public void PlaySfx3D(string soundName, Vector3 position, float volume)
         {
-            if (soundLibrary == null || fxPool == null) return;
+            if (soundLibrary == null)
+            {
+                return;
+            }
+
+            InitializeFxPoolIfNeeded();
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
-            if (clip == null) return;
+            if (clip == null)
+            {
+                return;
+            }
 
-            fxPool.PlayClip(clip, position);
+            fxPool.PlayClip(clip, position, Mathf.Clamp01(volume));
+        }
+
+        // two argument overload for PlaySfx3D with default volume of 1f
+        public void PlaySfx3D(string soundName, Vector3 position)
+        {
+            PlaySfx3D(soundName, position, 1f);
         }
 
         #endregion
