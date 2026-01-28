@@ -60,23 +60,25 @@ namespace Snog.Audio
                 available.Enqueue(CreateSource());
             }
         }
+    
+        private void ApplyDefaults(AudioSource src)
+        {
+            src.playOnAwake = false;
+            src.loop = false;
+            src.outputAudioMixerGroup = fxGroup;
+            src.spatialBlend = 1f;
+            src.rolloffMode = rolloffMode;
+            src.minDistance = minDistance;
+            src.maxDistance = maxDistance;
+            src.dopplerLevel = dopplerLevel;
+        }
 
         private AudioSource CreateSource()
         {
             var go = new GameObject("PooledAudioSource");
             go.transform.parent = transform;
-
             var src = go.AddComponent<AudioSource>();
-            src.playOnAwake = false;
-            src.loop = false;
-            src.outputAudioMixerGroup = fxGroup;
-            src.spatialBlend = 1f;
-
-            src.rolloffMode = rolloffMode;
-            src.minDistance = minDistance;
-            src.maxDistance = maxDistance;
-            src.dopplerLevel = dopplerLevel;
-
+            ApplyDefaults(src);
             return src;
         }
 
@@ -100,7 +102,7 @@ namespace Snog.Audio
 
             StartCoroutine(ReturnWhenFinished(src));
         }
-
+        
         private IEnumerator ReturnWhenFinished(AudioSource src)
         {
             while (src != null && src.isPlaying)
@@ -108,14 +110,18 @@ namespace Snog.Audio
                 yield return null;
             }
 
-            if (src == null) yield break;
+            if (src == null)
+            {
+                yield break;
+            }
 
             src.Stop();
             src.clip = null;
-
+            ApplyDefaults(src);
             inUse.Remove(src);
             available.Enqueue(src);
         }
+
 
         public int GetActiveSourceCount()
         {
