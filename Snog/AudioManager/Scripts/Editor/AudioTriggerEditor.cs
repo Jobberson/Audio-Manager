@@ -30,7 +30,7 @@ namespace Snog.Audio.Editor
         private SerializedProperty playDelayProp;
         private SerializedProperty fadeDurationProp;
 
-        // 3D override (new/optional)
+        // 3D override 
         private SerializedProperty useOverride3DPositionProp;
         private SerializedProperty override3DPositionProp;
 
