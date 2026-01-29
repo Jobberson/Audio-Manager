@@ -25,7 +25,7 @@ namespace Snog.Audio.Libraries
         [Header("Inline sound data (quick edit)")]
         public InlineSoundData[] inlineSounds;
 
-        private Dictionary<string, AudioClip[]> soundDict = new();
+        private Dictionary<string, AudioClip[]> soundDict = new Dictionary<string, AudioClip[]>(StringComparer.OrdinalIgnoreCase);
         private bool built = false;
 
         private void Awake()
@@ -34,12 +34,10 @@ namespace Snog.Audio.Libraries
             built = true;
         }
 
-        /// <summary>
-        /// Ensure the internal dictionary is built. Safe to call in editor or runtime.
-        /// </summary>
         private void EnsureBuilt()
         {
-            if (built) return;
+            if (built)
+                return;
 
             BuildDictionary();
 
@@ -51,17 +49,24 @@ namespace Snog.Audio.Libraries
                 {
                     var path = AssetDatabase.GUIDToAssetPath(g);
                     var so = AssetDatabase.LoadAssetAtPath<SoundClipData>(path);
-                    if (so == null) continue;
-                    if (string.IsNullOrEmpty(so.soundName)) continue;
-                    if (so.clips == null || so.clips.Length == 0) continue;
 
-                    if (!soundDict.ContainsKey(so.soundName))
-                        soundDict[so.soundName] = so.clips;
+                    if (so == null)
+                        continue;
+
+                    if (string.IsNullOrEmpty(so.soundName))
+                        continue;
+
+                    if (so.clips == null || so.clips.Length == 0)
+                        continue;
+
+                    string key = NormalizeKey(so.soundName);
+
+                    if (!soundDict.ContainsKey(key))
+                        soundDict[key] = so.clips;
                 }
             }
             catch (System.Exception ex)
             {
-                // log in editor so you can see failures during import / scanning
                 Debug.LogException(ex);
             }
 #endif
@@ -77,9 +82,20 @@ namespace Snog.Audio.Libraries
             {
                 foreach (var s in tracks)
                 {
-                    if (s == null) continue;
-                    if (string.IsNullOrEmpty(s.soundName)) continue;
-                    if (s.clips == null || s.clips.Length == 0) continue;
+                    if (s == null)
+                        continue;
+
+                    if (string.IsNullOrEmpty(s.soundName))
+                        continue;
+
+                    if (s.clips == null || s.clips.Length == 0)
+                        continue;
+
+                    string key = NormalizeKey(s.soundName);
+
+                    if (soundDict.ContainsKey(s.soundName))
+                        Debug.LogWarning($"[SoundLibrary] Duplicate soundName '{s.soundName}' from ScriptableObject list. Overwriting previous entry.", this);
+
                     soundDict[s.soundName] = s.clips;
                 }
             }
@@ -88,9 +104,20 @@ namespace Snog.Audio.Libraries
             {
                 foreach (var i in inlineSounds)
                 {
-                    if (i == null) continue;
-                    if (string.IsNullOrEmpty(i.soundName)) continue;
-                    if (i.clips == null || i.clips.Length == 0) continue;
+                    if (i == null)
+                        continue;
+
+                    if (string.IsNullOrEmpty(i.soundName))
+                        continue;
+
+                    if(i.clips == null || i.clips.Length == 0)
+                        continue;
+
+                    string key = NormalizeKey(i.soundName);
+
+                    if (soundDict.ContainsKey(i.soundName))
+                        Debug.LogWarning($"[SoundLibrary] Inline sound '{i.soundName}' is overriding an existing entry (likely from ScriptableObjects).", this);
+
                     soundDict[i.soundName] = i.clips;
                 }
             }
@@ -98,13 +125,15 @@ namespace Snog.Audio.Libraries
 
         public AudioClip GetClipFromName(string name)
         {
-            if (string.IsNullOrEmpty(name)) return null;
+            if (string.IsNullOrEmpty(name))
+                return null;
+
             EnsureBuilt();
 
-            if (soundDict.TryGetValue(name, out var clips) && clips != null && clips.Length > 0)
-            {
+            string key = NormalizeKey(name);
+
+            if(soundDict.TryGetValue(key, out var clips) && clips != null && clips.Length > 0)
                 return clips[UnityEngine.Random.Range(0, clips.Length)];
-            }
 
             return null;
         }
@@ -115,13 +144,8 @@ namespace Snog.Audio.Libraries
             return soundDict.Keys.OrderBy(k => k).ToArray();
         }
 
-        /// <summary>
-        /// Public API to force the library to rebuild (safe to call from editor code).
-        /// Call this after creating/assigning new SoundClipData assets.
-        /// </summary>
         public void RebuildDictionaries()
         {
-            // Force rebuild next time EnsureBuilt is called
             built = false;
             EnsureBuilt();
 
@@ -130,11 +154,21 @@ namespace Snog.Audio.Libraries
 #endif
         }
 
+        private string NormalizeKey(string raw)
+        {
+            return raw.Trim().ToLowerInvariant();
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Rebuild Sound Dictionary")]
         public void Editor_RebuildDictionary()
         {
             RebuildDictionaries();
+        }
+
+        private void OnValidate()
+        {
+            built = false;
         }
 #endif
     }

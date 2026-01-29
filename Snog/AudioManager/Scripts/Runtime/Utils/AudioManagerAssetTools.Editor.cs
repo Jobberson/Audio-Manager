@@ -1,15 +1,12 @@
-
 #if UNITY_EDITOR
-
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-
 using Snog.Audio.Clips;
 using Snog.Audio.Libraries;
-
 
 namespace Snog.Audio
 {
@@ -18,11 +15,15 @@ namespace Snog.Audio
         #region Asset Tools - Serialized State
 
         [Header("Folder Paths (Editor Only)")]
-
         [Header("Scanned Clips (Editor Only)")]
-        [SerializeField] private List<AudioClip> scannedMusicClips = new();
-        [SerializeField] private List<AudioClip> scannedAmbientClips = new();
-        [SerializeField] private List<AudioClip> scannedSFXClips = new();
+        [SerializeField]
+        private List<AudioClip> scannedMusicClips = new();
+
+        [SerializeField]
+        private List<AudioClip> scannedAmbientClips = new();
+
+        [SerializeField]
+        private List<AudioClip> scannedSFXClips = new();
 
         private const float SFX_MAX_LENGTH = 30f;
         private const float AMBIENT_MIN_LENGTH = 30f;
@@ -32,9 +33,6 @@ namespace Snog.Audio
 
         #region Public Editor API
 
-        /// <summary>
-        /// Let user pick a folder inside Assets. Stores a project-relative path: Assets/...
-        /// </summary>
         public void SetAudioFolderPath()
         {
             string selectedPath = EditorUtility.OpenFolderPanel(
@@ -48,7 +46,7 @@ namespace Snog.Audio
                 return;
             }
 
-            if (!selectedPath.StartsWith(Application.dataPath))
+            if (!selectedPath.StartsWith(Application.dataPath, StringComparison.Ordinal))
             {
                 Debug.LogWarning("Selected folder must be inside the project's Assets folder.");
                 return;
@@ -62,9 +60,6 @@ namespace Snog.Audio
             EditorUtility.SetDirty(this);
         }
 
-        /// <summary>
-        /// Scans the configured folder for AudioClips and fills the scanned lists.
-        /// </summary>
         public void ScanFolders()
         {
             EnsureScannedLists();
@@ -82,71 +77,86 @@ namespace Snog.Audio
             string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
             int total = guids.Length;
 
-            for (int i = 0; i < total; i++)
+            try
             {
-                string path = AssetDatabase.GUIDToAssetPath(guids[i]);
-                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
-                if (clip == null)
+                for (int i = 0; i < total; i++)
                 {
-                    continue;
-                }
+                    string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+                    var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+                    if (clip == null)
+                    {
+                        continue;
+                    }
 
-                EditorUtility.DisplayProgressBar(
-                    "Scanning Audio",
-                    $"Processing {i + 1}/{total}: {clip.name}",
-                    (float)i / Mathf.Max(1, total)
-                );
+                    EditorUtility.DisplayProgressBar(
+                        "Scanning Audio",
+                        $"Processing {i + 1}/{total}: {clip.name}",
+                        (float)i / Mathf.Max(1, total)
+                    );
 
-                string normalizedPath = path.ToLower().Replace("\\", "/");
-                string fileName = Path.GetFileNameWithoutExtension(path).ToLower();
+                    string normalizedPath = path.Replace("\\", "/").ToLowerInvariant();
+                    string fileName = Path.GetFileNameWithoutExtension(path);
+                    string fileLower = fileName.ToLowerInvariant();
 
-                // Folder/name hints first
-                if (normalizedPath.Contains("/music/") ||
-                    normalizedPath.Contains("/bgm/") ||
-                    fileName.Contains("music") ||
-                    fileName.Contains("bgm") ||
-                    fileName.Contains("theme"))
-                {
-                    scannedMusicClips.Add(clip);
-                    continue;
-                }
+                    if
+                    (
+                        normalizedPath.Contains("/music/") ||
+                        normalizedPath.Contains("/bgm/") ||
+                        fileLower.Contains("music") ||
+                        fileLower.Contains("bgm") ||
+                        fileLower.Contains("theme")
+                    )
+                    {
+                        scannedMusicClips.Add(clip);
+                        continue;
+                    }
 
-                if (normalizedPath.Contains("/ambient/") ||
-                    normalizedPath.Contains("/ambience/") ||
-                    normalizedPath.Contains("/environment/") ||
-                    fileName.Contains("ambient") ||
-                    fileName.Contains("amb"))
-                {
-                    scannedAmbientClips.Add(clip);
-                    continue;
-                }
+                    if
+                    (
+                        normalizedPath.Contains("/ambient/") ||
+                        normalizedPath.Contains("/ambience/") ||
+                        normalizedPath.Contains("/environment/") ||
+                        fileLower.Contains("ambient") ||
+                        fileLower.Contains("ambience") ||
+                        fileLower.Contains("amb_") ||
+                        fileLower.Contains("amb-")
+                    )
+                    {
+                        scannedAmbientClips.Add(clip);
+                        continue;
+                    }
 
-                if (normalizedPath.Contains("/sfx/") ||
-                    normalizedPath.Contains("/fx/") ||
-                    normalizedPath.Contains("/soundeffects/") ||
-                    fileName.Contains("sfx") ||
-                    fileName.Contains("fx"))
-                {
-                    scannedSFXClips.Add(clip);
-                    continue;
-                }
+                    if
+                    (
+                        normalizedPath.Contains("/sfx/") ||
+                        normalizedPath.Contains("/fx/") ||
+                        normalizedPath.Contains("/soundeffects/") ||
+                        fileLower.Contains("sfx") ||
+                        fileLower.Contains("fx")
+                    )
+                    {
+                        scannedSFXClips.Add(clip);
+                        continue;
+                    }
 
-                // Length heuristics fallback
-                if (clip.length >= MUSIC_MIN_LENGTH)
-                {
-                    scannedMusicClips.Add(clip);
-                }
-                else if (clip.length >= AMBIENT_MIN_LENGTH)
-                {
-                    scannedAmbientClips.Add(clip);
-                }
-                else
-                {
-                    scannedSFXClips.Add(clip);
+                    if (clip.length >= MUSIC_MIN_LENGTH)
+                    {
+                        scannedMusicClips.Add(clip);
+                    }
+                    else if (clip.length >= AMBIENT_MIN_LENGTH)
+                    {
+                        scannedAmbientClips.Add(clip);
+                    }
+                    else
+                    {
+                        scannedSFXClips.Add(clip);
+                    }
                 }
             }
-
-            EditorUtility.ClearProgressBar();
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
 
             Debug.Log(
                 $"Scan complete: {scannedMusicClips.Count} music, {scannedAmbientClips.Count} ambient, {scannedSFXClips.Count} sfx.",
@@ -156,10 +166,6 @@ namespace Snog.Audio
             EditorUtility.SetDirty(this);
         }
 
-        /// <summary>
-        /// Generates ScriptableObjects into: {audioFolderPath}/GeneratedTracks/{Music|Ambient|SFX}
-        /// Music => MusicTrack, Ambient => AmbientTrack, SFX => SoundClipData (grouped).
-        /// </summary>
         public void GenerateScriptableObjects()
         {
             if (string.IsNullOrEmpty(audioFolderPath))
@@ -181,129 +187,148 @@ namespace Snog.Audio
             string[] clipGuids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
             int total = clipGuids.Length;
 
-            // SFX grouping: group by parent folder (preferred), or filename prefix (fallback)
             Dictionary<string, List<AudioClip>> sfxGroups = new();
-
             int createdMusic = 0;
             int createdAmbient = 0;
             int createdSfx = 0;
 
-            for (int i = 0; i < total; i++)
+            try
             {
-                string clipPath = AssetDatabase.GUIDToAssetPath(clipGuids[i]);
-                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(clipPath);
-                if (clip == null)
+                for (int i = 0; i < total; i++)
                 {
-                    continue;
+                    string clipPath = AssetDatabase.GUIDToAssetPath(clipGuids[i]);
+                    var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(clipPath);
+                    if (clip == null)
+                    {
+                        continue;
+                    }
+
+                    EditorUtility.DisplayProgressBar(
+                        "Generating Assets",
+                        $"Analyzing {i + 1}/{total}: {clip.name}",
+                        (float)i / Mathf.Max(1, total)
+                    );
+
+                    string normalizedPath = clipPath.Replace("\\", "/").ToLowerInvariant();
+                    string fileName = Path.GetFileNameWithoutExtension(clipPath);
+                    string fileLower = fileName.ToLowerInvariant();
+
+                    bool isMusic =
+                    (
+                        normalizedPath.Contains("/music/") ||
+                        normalizedPath.Contains("/bgm/") ||
+                        fileLower.Contains("music") ||
+                        fileLower.Contains("bgm") ||
+                        fileLower.Contains("theme") ||
+                        clip.length >= MUSIC_MIN_LENGTH
+                    );
+
+                    bool isAmbient =
+                    (
+                        !isMusic &&
+                        (
+                            normalizedPath.Contains("/ambient/") ||
+                            normalizedPath.Contains("/ambience/") ||
+                            normalizedPath.Contains("/environment/") ||
+                            fileLower.Contains("ambient") ||
+                            fileLower.Contains("ambience") ||
+                            (
+                                clip.length >= AMBIENT_MIN_LENGTH &&
+                                clip.length < MUSIC_MIN_LENGTH
+                            )
+                        )
+                    );
+
+                    if (isMusic)
+                    {
+                        string assetName = SanitizeAssetName(fileName);
+                        string assetPath = GetUniqueAssetPath(musicFolder, assetName);
+
+                        var mt = ScriptableObject.CreateInstance<MusicTrack>();
+                        mt.trackName = fileName;
+                        mt.clip = clip;
+                        mt.description = $"Generated from {clipPath}";
+                        AssetDatabase.CreateAsset(mt, assetPath);
+
+                        createdMusic++;
+                        continue;
+                    }
+
+                    if (isAmbient)
+                    {
+                        string assetName = SanitizeAssetName(fileName);
+                        string assetPath = GetUniqueAssetPath(ambientFolder, assetName);
+
+                        var at = ScriptableObject.CreateInstance<AmbientTrack>();
+                        at.trackName = fileName;
+                        at.clip = clip;
+                        at.description = $"Generated from {clipPath}";
+                        AssetDatabase.CreateAsset(at, assetPath);
+
+                        createdAmbient++;
+                        continue;
+                    }
+
+                    string parentFolder = Path.GetFileName(Path.GetDirectoryName(clipPath));
+                    parentFolder = string.IsNullOrEmpty(parentFolder) ? fileName : parentFolder;
+
+                    string lowerParent = parentFolder.ToLowerInvariant();
+
+                    bool parentIsGeneric =
+                    (
+                        lowerParent == "sfx" ||
+                        lowerParent == "sounds" ||
+                        lowerParent == "audio" ||
+                        lowerParent == "clips"
+                    );
+
+                    string groupKey;
+                    if (!parentIsGeneric)
+                    {
+                        groupKey = SanitizeAssetName(parentFolder);
+                    }
+                    else
+                    {
+                        int idx = fileLower.IndexOfAny(new[] { '_', '-' });
+                        groupKey = idx > 0
+                            ? SanitizeAssetName(fileName.Substring(0, idx))
+                            : SanitizeAssetName(fileName);
+                    }
+
+                    if (!sfxGroups.TryGetValue(groupKey, out var list))
+                    {
+                        list = new List<AudioClip>();
+                        sfxGroups[groupKey] = list;
+                    }
+
+                    list.Add(clip);
                 }
 
-                EditorUtility.DisplayProgressBar(
-                    "Generating Assets",
-                    $"Analyzing {i + 1}/{total}: {clip.name}",
-                    (float)i / Mathf.Max(1, total)
-                );
-
-                string normalizedPath = clipPath.ToLower().Replace("\\", "/");
-                string fileName = Path.GetFileNameWithoutExtension(clipPath);
-                string fileLower = fileName.ToLower();
-
-                bool isMusic = normalizedPath.Contains("/music/") ||
-                               fileLower.Contains("music") ||
-                               fileLower.Contains("bgm") ||
-                               fileLower.Contains("theme") ||
-                               clip.length >= MUSIC_MIN_LENGTH;
-
-                bool isAmbient = !isMusic && (
-                               normalizedPath.Contains("/ambient/") ||
-                               normalizedPath.Contains("/ambience/") ||
-                               fileLower.Contains("ambient") ||
-                               (clip.length >= AMBIENT_MIN_LENGTH && clip.length < MUSIC_MIN_LENGTH));
-
-                if (isMusic)
+                int groupIndex = 0;
+                foreach (var kv in sfxGroups)
                 {
-                    string assetName = SanitizeAssetName(fileName);
-                    string assetPath = GetUniqueAssetPath(musicFolder, assetName);
+                    groupIndex++;
 
-                    var mt = ScriptableObject.CreateInstance<MusicTrack>();
-                    mt.trackName = fileName;
-                    mt.clip = clip;
-                    mt.description = $"Generated from {clipPath}";
-                    AssetDatabase.CreateAsset(mt, assetPath);
-                    createdMusic++;
+                    EditorUtility.DisplayProgressBar(
+                        "Generating SFX Groups",
+                        $"Creating {groupIndex}/{sfxGroups.Count}: {kv.Key}",
+                        (float)groupIndex / Mathf.Max(1, sfxGroups.Count)
+                    );
 
-                    continue;
+                    string assetPath = GetUniqueAssetPath(sfxFolder, kv.Key);
+
+                    var sd = ScriptableObject.CreateInstance<SoundClipData>();
+                    sd.soundName = kv.Key;
+                    sd.clips = kv.Value.ToArray();
+                    AssetDatabase.CreateAsset(sd, assetPath);
+
+                    createdSfx++;
                 }
-
-                if (isAmbient)
-                {
-                    string assetName = SanitizeAssetName(fileName);
-                    string assetPath = GetUniqueAssetPath(ambientFolder, assetName);
-
-                    var at = ScriptableObject.CreateInstance<AmbientTrack>();
-                    at.trackName = fileName;
-                    at.clip = clip;
-                    at.description = $"Generated from {clipPath}";
-                    AssetDatabase.CreateAsset(at, assetPath);
-                    createdAmbient++;
-
-                    continue;
-                }
-
-                // SFX grouping
-                string parentFolder = Path.GetFileName(Path.GetDirectoryName(clipPath));
-                parentFolder = string.IsNullOrEmpty(parentFolder) ? fileName : parentFolder;
-
-                string lowerParent = parentFolder.ToLower();
-                bool parentIsGeneric = lowerParent == "sfx" ||
-                                       lowerParent == "sounds" ||
-                                       lowerParent == "audio" ||
-                                       lowerParent == "clips";
-
-                string groupKey;
-
-                if (!parentIsGeneric)
-                {
-                    groupKey = SanitizeAssetName(parentFolder);
-                }
-                else
-                {
-                    int idx = fileLower.IndexOfAny(new[] { '_', '-' });
-                    groupKey = idx > 0
-                        ? SanitizeAssetName(fileName.Substring(0, idx))
-                        : SanitizeAssetName(fileName);
-                }
-
-                if (!sfxGroups.TryGetValue(groupKey, out var list))
-                {
-                    list = new List<AudioClip>();
-                    sfxGroups[groupKey] = list;
-                }
-
-                list.Add(clip);
             }
-
-            // Create SoundClipData assets (one per group)
-            int groupIndex = 0;
-            foreach (var kv in sfxGroups)
+            finally
             {
-                groupIndex++;
-
-                EditorUtility.DisplayProgressBar(
-                    "Generating SFX Groups",
-                    $"Creating {groupIndex}/{sfxGroups.Count}: {kv.Key}",
-                    (float)groupIndex / Mathf.Max(1, sfxGroups.Count)
-                );
-
-                string assetPath = GetUniqueAssetPath(sfxFolder, kv.Key);
-
-                var sd = ScriptableObject.CreateInstance<SoundClipData>();
-                sd.soundName = kv.Key;
-                sd.clips = kv.Value.ToArray();
-                AssetDatabase.CreateAsset(sd, assetPath);
-                createdSfx++;
+                EditorUtility.ClearProgressBar();
             }
-
-            EditorUtility.ClearProgressBar();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -311,9 +336,6 @@ namespace Snog.Audio
             Debug.Log($"Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}", this);
         }
 
-        /// <summary>
-        /// Assigns generated assets from GeneratedTracks/* into the libraries on this AudioManager GameObject.
-        /// </summary>
         public void AssignToLibraries()
         {
             if (string.IsNullOrEmpty(audioFolderPath))
@@ -333,7 +355,12 @@ namespace Snog.Audio
             var ambientLib = GetComponent<AmbientLibrary>();
             var sfxLib = GetComponent<SoundLibrary>();
 
-            if (musicLib == null || ambientLib == null || sfxLib == null)
+            if
+            (
+                musicLib == null ||
+                ambientLib == null ||
+                sfxLib == null
+            )
             {
                 Debug.LogWarning("Missing one or more library components on this GameObject.", this);
                 return;
@@ -353,6 +380,7 @@ namespace Snog.Audio
                 {
                     string p = AssetDatabase.GUIDToAssetPath(guid);
                     var mt = AssetDatabase.LoadAssetAtPath<MusicTrack>(p);
+
                     if (mt != null && !musicLib.tracks.Contains(mt))
                     {
                         musicLib.tracks.Add(mt);
@@ -367,6 +395,7 @@ namespace Snog.Audio
                 {
                     string p = AssetDatabase.GUIDToAssetPath(guid);
                     var at = AssetDatabase.LoadAssetAtPath<AmbientTrack>(p);
+
                     if (at != null && !ambientLib.tracks.Contains(at))
                     {
                         ambientLib.tracks.Add(at);
@@ -381,6 +410,7 @@ namespace Snog.Audio
                 {
                     string p = AssetDatabase.GUIDToAssetPath(guid);
                     var sd = AssetDatabase.LoadAssetAtPath<SoundClipData>(p);
+
                     if (sd != null && !sfxLib.tracks.Contains(sd))
                     {
                         sfxLib.tracks.Add(sd);
@@ -392,7 +422,6 @@ namespace Snog.Audio
             EditorUtility.SetDirty(musicLib);
             EditorUtility.SetDirty(ambientLib);
             EditorUtility.SetDirty(sfxLib);
-
             AssetDatabase.SaveAssets();
 
             Debug.Log($"Assigned to libraries — Music: {addedMusic}, Ambient: {addedAmbient}, SFX: {addedSfx}", this);
@@ -429,11 +458,15 @@ namespace Snog.Audio
                 return "unnamed";
             }
 
-            var clean = new string(raw
-                .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
-                .ToArray());
+            string clean = new string(
+                raw
+                    .Trim()
+                    .Select(c => char.ToLowerInvariant(c))
+                    .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                    .ToArray()
+            );
 
-            return clean.Trim().Replace(' ', '_').ToLower();
+            return string.IsNullOrEmpty(clean) ? "unnamed" : clean;
         }
 
         private string GetUniqueAssetPath(string folder, string baseName)
@@ -442,18 +475,16 @@ namespace Snog.Audio
             baseName = SanitizeAssetName(baseName);
 
             string path = $"{folder}/{baseName}.asset";
-            if (AssetDatabase.LoadAssetAtPath<Object>(path) == null)
+            if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) == null)
             {
                 return path;
             }
 
             int suffix = 1;
-
             while (true)
             {
                 string candidate = $"{folder}/{baseName}_{suffix:00}.asset";
-
-                if (AssetDatabase.LoadAssetAtPath<Object>(candidate) == null)
+                if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(candidate) == null)
                 {
                     return candidate;
                 }
@@ -461,8 +492,8 @@ namespace Snog.Audio
                 suffix++;
             }
         }
+
         #endregion
     }
 }
-
 #endif

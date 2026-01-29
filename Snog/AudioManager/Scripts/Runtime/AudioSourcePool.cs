@@ -2,15 +2,15 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Audio;
-
 using Snog.Shared;
 
 namespace Snog.Audio
 {
-
     public class AudioSourcePool : Singleton<AudioSourcePool>
     {
         public int poolSize = 10;
+        public int maxExtraSources = 10;
+
         public AudioMixerGroup fxGroup;
 
         [Header("Defaults")]
@@ -37,7 +37,6 @@ namespace Snog.Audio
         {
             poolSize = Mathf.Max(1, size);
             fxGroup = group;
-
             RebuildPool();
             initialized = true;
         }
@@ -60,7 +59,7 @@ namespace Snog.Audio
                 available.Enqueue(CreateSource());
             }
         }
-    
+
         private void ApplyDefaults(AudioSource src)
         {
             src.playOnAwake = false;
@@ -71,23 +70,38 @@ namespace Snog.Audio
             src.minDistance = minDistance;
             src.maxDistance = maxDistance;
             src.dopplerLevel = dopplerLevel;
+
+            src.pitch = 1f;
+            src.panStereo = 0f;
         }
 
         private AudioSource CreateSource()
         {
             var go = new GameObject("PooledAudioSource");
             go.transform.parent = transform;
+
             var src = go.AddComponent<AudioSource>();
             ApplyDefaults(src);
+
             return src;
         }
 
         public void PlayClip(AudioClip clip, Vector3 pos, float volume)
         {
-            if (clip == null) return;
+            if (clip == null)
+            {
+                return;
+            }
+
+            int totalCapacity = poolSize + Mathf.Max(0, maxExtraSources);
 
             if (available.Count == 0)
             {
+                if ((available.Count + inUse.Count) >= totalCapacity)
+                {
+                    return;
+                }
+
                 available.Enqueue(CreateSource());
             }
 
@@ -96,13 +110,13 @@ namespace Snog.Audio
 
             src.transform.position = pos;
             src.clip = clip;
-            src.volume = volume;
+            src.volume = Mathf.Clamp01(volume);
             src.loop = false;
             src.Play();
 
             StartCoroutine(ReturnWhenFinished(src));
         }
-        
+
         private IEnumerator ReturnWhenFinished(AudioSource src)
         {
             while (src != null && src.isPlaying)
@@ -118,10 +132,10 @@ namespace Snog.Audio
             src.Stop();
             src.clip = null;
             ApplyDefaults(src);
+
             inUse.Remove(src);
             available.Enqueue(src);
         }
-
 
         public int GetActiveSourceCount()
         {

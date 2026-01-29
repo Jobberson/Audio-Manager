@@ -1,154 +1,41 @@
 ﻿﻿using UnityEngine;
-using System.Collections.Generic;
-using System.Linq;
-using Snog.Audio.Clips;
 
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
-
-namespace Snog.Audio.Libraries
+namespace Snog.Audio.Clips
 {
-    public class MusicLibrary : MonoBehaviour
+    [CreateAssetMenu(fileName = "MusicTrack", menuName = "Snog/AudioManager/MusicTrack")]
+    public class MusicTrack : ScriptableObject
     {
-        [Header("ScriptableObject Music Clips")]
-        public List<MusicTrack> tracks = new();
+        [Header("Identification")]
+        [Tooltip("Unique key used to play this track via MusicLibrary/AudioManager.")]
+        public string trackName;
 
-        private Dictionary<string, MusicTrack> musicDictionary = new();
-        private bool built = false;
+        [Tooltip("Optional tag for filtering/grouping (e.g., Combat, Calm, Menu).")]
+        public string moodTag;
 
-        private void Awake()
-        {
-            BuildDictionary();
-            built = true;
-        }
+        [Header("Audio")]
+        public AudioClip clip;
+        public bool loop = true;
 
-        private void EnsureBuilt()
-        {
-            if (built)
-            {
-                return;
-            }
+        [Header("Defaults")]
+        [Range(0f, 1f)]
+        public float defaultVolume = 1f;
 
-            BuildDictionary();
+        [Header("Metadata")]
+        [TextArea]
+        public string description;
 
 #if UNITY_EDITOR
-            try
-            {
-                string[] guids = AssetDatabase.FindAssets("t:MusicTrack");
-                foreach (var g in guids)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(g);
-                    var asset = AssetDatabase.LoadAssetAtPath<MusicTrack>(path);
-
-                    if (asset == null)
-                    {
-                        continue;
-                    }
-
-                    if (string.IsNullOrEmpty(asset.trackName))
-                    {
-                        continue;
-                    }
-
-                    if (asset.clip == null)
-                    {
-                        continue;
-                    }
-
-                    if (!musicDictionary.ContainsKey(asset.trackName))
-                    {
-                        musicDictionary[asset.trackName] = asset;
-                    }
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogException(ex);
-            }
-#endif
-
-            built = true;
-        }
-
-        private void BuildDictionary()
-        {
-            musicDictionary.Clear();
-
-            if (tracks != null)
-            {
-                foreach (var m in tracks)
-                {
-                    if (m == null)
-                    {
-                        continue;
-                    }
-
-                    if (string.IsNullOrEmpty(m.trackName))
-                    {
-                        continue;
-                    }
-
-                    if (m.clip == null)
-                    {
-                        continue;
-                    }
-
-                    musicDictionary[m.trackName] = m;
-                }
-            }
-        }
-
-        public MusicTrack GetTrackFromName(string name)
-        {
-            if (string.IsNullOrEmpty(name))
-            {
-                return null;
-            }
-
-            EnsureBuilt();
-
-            if (musicDictionary.TryGetValue(name, out var track))
-            {
-                return track;
-            }
-
-            return null;
-        }
-
-        public AudioClip GetClipFromName(string name)
-        {
-            MusicTrack track = GetTrackFromName(name);
-            return track != null ? track.clip : null;
-        }
-
-        public string[] GetAllClipNames()
-        {
-            EnsureBuilt();
-            return musicDictionary.Keys.OrderBy(k => k).ToArray();
-        }
-
-        public void RebuildDictionaries()
-        {
-            built = false;
-            EnsureBuilt();
-
-#if UNITY_EDITOR
-            EditorUtility.SetDirty(this);
-            Debug.Log($"[MusicLibrary] RebuildDictionaries: found {musicDictionary.Count} tracks.");
-#endif
-        }
-
-#if UNITY_EDITOR
-        [ContextMenu("Rebuild Music Dictionary")]
-        public void Editor_RebuildDictionary()
-        {
-            RebuildDictionaries();
-        }
-
         private void OnValidate()
         {
-            built = false;
+            if (string.IsNullOrWhiteSpace(trackName))
+                trackName = name;
+
+            trackName = trackName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(moodTag))
+                moodTag = moodTag.Trim();
+
+            defaultVolume = Mathf.Clamp01(defaultVolume);
         }
 #endif
     }

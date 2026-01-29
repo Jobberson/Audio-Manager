@@ -7,42 +7,80 @@ namespace Snog.Audio.Utils
     [RequireComponent(typeof(Collider))]
     public class AmbientZone : MonoBehaviour
     {
-        public enum ZoneMode { Replace, Stack }
-        public enum ExitAction { None, StopFade, StopImmediate }
+        public enum ZoneMode
+        {
+            Replace,
+            Stack
+        }
+
+        public enum ExitAction
+        {
+            /// <summary>
+            /// Replace mode: do nothing.
+            /// Stack mode: token will still be popped immediately (so the zone doesn't leak).
+            /// </summary>
+            None,
+
+            /// <summary>
+            /// Replace mode: ClearAmbient with fade.
+            /// Stack mode: Pop token with fade.
+            /// </summary>
+            StopFade,
+
+            /// <summary>
+            /// Replace mode: ClearAmbient instantly.
+            /// Stack mode: Pop token instantly.
+            /// </summary>
+            StopImmediate
+        }
 
         [Header("Zone")]
         [Tooltip("Which profile should be activated when the player enters this zone.")]
-        [SerializeField] private AmbientProfile profile;
+        [SerializeField]
+        private AmbientProfile profile;
 
         [Tooltip("Only colliders with this tag will trigger the zone. Leave empty to accept any tag.")]
-        [SerializeField] private string tagToCompare = "Player";
+        [SerializeField]
+        private string tagToCompare = "Player";
 
         [Header("Mode")]
-        [SerializeField] private ZoneMode mode = ZoneMode.Stack;
+        [SerializeField]
+        private ZoneMode mode = ZoneMode.Stack;
+
         [Tooltip("Used only in Stack mode. Higher priority wins when voice budget is exceeded.")]
-        [SerializeField] private int stackPriority = 0;
+        [SerializeField]
+        private int stackPriority = 0;
 
         [Header("Enter Behavior")]
-        [SerializeField] private bool fadeOnEnter = true;
-        [SerializeField] private float enterFadeDuration = 2f;
+        [SerializeField]
+        private bool fadeOnEnter = true;
+
+        [SerializeField]
+        private float enterFadeDuration = 2f;
 
         [Header("Exit Behavior")]
         [Tooltip(
             "Replace mode:\n" +
-            "  None - do nothing\n" +
-            "  StopFade - ClearAmbient with exit fade\n" +
-            "  StopImmediate - ClearAmbient instantly\n\n" +
+            " None - do nothing\n" +
+            " StopFade - ClearAmbient with exit fade\n" +
+            " StopImmediate - ClearAmbient instantly\n\n" +
             "Stack mode:\n" +
-            "  None - Pop token instantly\n" +
-            "  StopFade - Pop token with exit fade\n" +
-            "  StopImmediate - Pop token instantly"
+            " None - Pop token instantly (cleanup)\n" +
+            " StopFade - Pop token with exit fade\n" +
+            " StopImmediate - Pop token instantly"
         )]
-        [SerializeField] private ExitAction exitAction = ExitAction.None;
-        [SerializeField] private float exitFadeDuration = 2f;
+        [SerializeField]
+        private ExitAction exitAction = ExitAction.None;
+
+        [SerializeField]
+        private float exitFadeDuration = 2f;
 
         [Header("Gizmos")]
-        [SerializeField] private Color gizmoColor = new(0.2f, 0.7f, 0.4f, 0.25f);
-        [SerializeField] private Color gizmoWireColor = new(0.2f, 0.7f, 0.4f, 1f);
+        [SerializeField]
+        private Color gizmoColor = new(0.2f, 0.7f, 0.4f, 0.25f);
+
+        [SerializeField]
+        private Color gizmoWireColor = new(0.2f, 0.7f, 0.4f, 1f);
 
         private readonly HashSet<Collider> inside = new HashSet<Collider>();
         private int ambientToken = -1;
@@ -50,35 +88,42 @@ namespace Snog.Audio.Utils
         private void Reset()
         {
             var c = GetComponent<Collider>();
-            if (c != null) c.isTrigger = true;
+            if (c != null)
+            {
+                c.isTrigger = true;
+            }
         }
 
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            // Ensure collider is a trigger for zone behavior while editing
             var c = GetComponent<Collider>();
             if (c != null && !c.isTrigger)
             {
                 c.isTrigger = true;
             }
+
+            enterFadeDuration = Mathf.Max(0f, enterFadeDuration);
+            exitFadeDuration = Mathf.Max(0f, exitFadeDuration);
         }
 #endif
 
         private void OnTriggerEnter(Collider other)
         {
-            // If tagToCompare is set, require it. If empty, accept any collider.
             if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare))
             {
                 return;
             }
-            
 
-            // Add collider; if already present, ignore
-            if (!inside.Add(other)) return;
+            if (!inside.Add(other))
+            {
+                return;
+            }
 
-            // Only react on first entering collider (supports multi-collider characters)
-            if (inside.Count > 1) return;
+            if (inside.Count > 1)
+            {
+                return;
+            }
 
             var manager = AudioManager.Instance;
             if (manager == null)
@@ -102,7 +147,6 @@ namespace Snog.Audio.Utils
                     break;
 
                 case ZoneMode.Stack:
-                    // Ensure we don't leak tokens if re-enter happens oddly
                     if (ambientToken >= 0)
                     {
                         manager.PopAmbientToken(ambientToken, 0f);
@@ -116,30 +160,45 @@ namespace Snog.Audio.Utils
 
         private void OnTriggerExit(Collider other)
         {
-            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare)) return;
+            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare))
+            {
+                return;
+            }
 
-            if (!inside.Remove(other)) return;
+            if (!inside.Remove(other))
+            {
+                return;
+            }
 
-            // Only react when the last collider exits
-            if (inside.Count > 0) return;
+            if (inside.Count > 0)
+            {
+                return;
+            }
 
             var manager = AudioManager.Instance;
-            if (manager == null) return;
+            if (manager == null)
+            {
+                return;
+            }
 
             HandleExit(manager, exitAction);
         }
 
         private void OnDisable()
         {
-            // Safety: if zone is disabled while player is inside, avoid leaving ambience stuck.
-            if (inside.Count == 0) return;
+            if (inside.Count == 0)
+            {
+                return;
+            }
 
             inside.Clear();
 
             var manager = AudioManager.Instance;
-            if (manager == null) return;
+            if (manager == null)
+            {
+                return;
+            }
 
-            // Disable should never leave stack entries around.
             HandleExit(manager, ExitAction.StopImmediate);
         }
 
@@ -154,9 +213,11 @@ namespace Snog.Audio.Utils
                     {
                         case ExitAction.None:
                             break;
+
                         case ExitAction.StopFade:
                             manager.ClearAmbient(fade);
                             break;
+
                         case ExitAction.StopImmediate:
                             manager.ClearAmbient(0f);
                             break;
@@ -164,17 +225,21 @@ namespace Snog.Audio.Utils
                     break;
 
                 case ZoneMode.Stack:
-                    if (ambientToken < 0) break;
+                    if (ambientToken < 0)
+                    {
+                        break;
+                    }
 
                     switch (action)
                     {
                         case ExitAction.None:
-                            // Stack mode should always clean up its own token.
                             manager.PopAmbientToken(ambientToken, 0f);
                             break;
+
                         case ExitAction.StopFade:
                             manager.PopAmbientToken(ambientToken, fade);
                             break;
+
                         case ExitAction.StopImmediate:
                             manager.PopAmbientToken(ambientToken, 0f);
                             break;
@@ -187,7 +252,11 @@ namespace Snog.Audio.Utils
 
         private float GetEnterFade()
         {
-            if (profile != null && profile.defaultFade > 0f) return profile.defaultFade;
+            if (profile != null && profile.defaultFade > 0f)
+            {
+                return profile.defaultFade;
+            }
+
             return Mathf.Max(0f, enterFadeDuration);
         }
 
@@ -207,7 +276,6 @@ namespace Snog.Audio.Utils
             else
             {
                 var t = col.transform;
-                // Use lossyScale to compute sizes, and set matrix to transform so shapes draw in local space
                 var lossy = t.lossyScale;
 
                 if (col is BoxCollider box)
@@ -215,7 +283,6 @@ namespace Snog.Audio.Utils
                     Vector3 size = Vector3.Scale(box.size, lossy);
                     Gizmos.matrix = Matrix4x4.TRS(t.TransformPoint(box.center), t.rotation, Vector3.one);
                     Gizmos.DrawCube(Vector3.zero, size);
-
                     Gizmos.color = gizmoWireColor;
                     Gizmos.DrawWireCube(Vector3.zero, size);
                 }
@@ -224,13 +291,11 @@ namespace Snog.Audio.Utils
                     float radius = sphere.radius * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
                     Gizmos.matrix = Matrix4x4.TRS(t.TransformPoint(sphere.center), t.rotation, Vector3.one);
                     Gizmos.DrawSphere(Vector3.zero, radius);
-
                     Gizmos.color = gizmoWireColor;
                     Gizmos.DrawWireSphere(Vector3.zero, radius);
                 }
                 else if (col is CapsuleCollider capsule)
                 {
-                    // This is a simple visual approximation that works for most cases.
                     float radius = capsule.radius * Mathf.Max(lossy.x, lossy.z);
                     float height = capsule.height * lossy.y;
 

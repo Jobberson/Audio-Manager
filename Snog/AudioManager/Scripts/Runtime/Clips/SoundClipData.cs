@@ -21,29 +21,23 @@ namespace Snog.Audio.Clips
         private void OnValidate()
         {
             if (string.IsNullOrWhiteSpace(soundName))
-            {
                 soundName = name;
-            }
 
+            soundName = soundName.Trim();
             defaultVolume = Mathf.Clamp01(defaultVolume);
 
-            // Remove null clips but keep array stable if user wants empty intentionally
             if (clips != null && clips.Length > 0)
             {
-                int validCount = 0;
+                bool hasAny = false;
                 for (int i = 0; i < clips.Length; i++)
                 {
                     if (clips[i] != null)
                     {
-                        validCount++;
+                        hasAny = true;
+                        break;
                     }
                 }
 
-                if (validCount == 0)
-                {
-                    // Leave as-is but helps user notice they assigned nothing useful
-                    // Avoid spamming logs: a HelpBox in a custom inspector is even better later.
-                }
             }
         }
 #endif

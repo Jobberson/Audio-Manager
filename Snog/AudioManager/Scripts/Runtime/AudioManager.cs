@@ -79,6 +79,12 @@ namespace Snog.Audio
 
         #endregion
 
+        #region Music
+
+        private Coroutine musicFadeCo;
+
+        #endregion
+
         #region SFX
 
         [Header("3D FX Pool")]
@@ -172,7 +178,6 @@ namespace Snog.Audio
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            // Ensure library component references exist while editing
             GetLibraries();
         }
 #endif
@@ -280,7 +285,12 @@ namespace Snog.Audio
 
         public void PlaySfx2D(string soundName)
         {
-            if (soundLibrary == null || fx2DSource == null) 
+            PlaySfx2D(soundName, 1f);
+        }
+
+        public void PlaySfx2D(string soundName, float volume)
+        {
+            if(soundLibrary == null || fx2DSource == null)
             {
                 Debug.LogWarning("AudioManager: SoundLibrary or fx2DSource is null. Cannot play SFX 2D.");
                 GetLibraries();
@@ -290,9 +300,12 @@ namespace Snog.Audio
             InitializeFxPoolIfNeeded();
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
-            if (clip == null) return;
+            if (clip == null)
+            {
+                return;
+            }
 
-            fx2DSource.PlayOneShot(clip);
+            fx2DSource.PlayOneShot(clip, Mathf.Clamp01(volume));
         }
 
         public void PlaySfx3D(string soundName, Vector3 position, float volume)
@@ -313,7 +326,6 @@ namespace Snog.Audio
             fxPool.PlayClip(clip, position, Mathf.Clamp01(volume));
         }
 
-        // two argument overload for PlaySfx3D with default volume of 1f
         public void PlaySfx3D(string soundName, Vector3 position)
         {
             PlaySfx3D(soundName, position, 1f);
@@ -325,26 +337,25 @@ namespace Snog.Audio
      
         public void PlayMusic(string trackName, float delay = 0f, float fadeIn = 0f)
         {
-            if (musicLibrary == null || musicSource == null)
-            {
+            if(musicLibrary == null || musicSource == null)
                 return;
-            }
 
             MusicTrack track = musicLibrary.GetTrackFromName(trackName);
-            if (track == null || track.clip == null)
-            {
+            if(track == null || track.clip == null)
                 return;
+
+            if (musicFadeCo != null)
+            {
+                StopCoroutine(musicFadeCo);
+                musicFadeCo = null;
             }
 
             musicSource.clip = track.clip;
             musicSource.loop = track.loop;
-
             ApplyMixerRouting();
 
             if (fadeIn > 0f)
-            {
-                StartCoroutine(MusicFadeInCo(delay, fadeIn));
-            }
+                musicFadeCo = StartCoroutine(MusicFadeInCo(delay, fadeIn));
             else
             {
                 musicSource.volume = 1f;
@@ -354,11 +365,18 @@ namespace Snog.Audio
 
         public void StopMusic(float fadeOut = 0f)
         {
-            if (musicSource == null) return;
+            if (musicSource == null)
+                return;
+
+            if (musicFadeCo != null)
+            {
+                StopCoroutine(musicFadeCo);
+                musicFadeCo = null;
+            }
 
             if (fadeOut > 0f)
             {
-                StartCoroutine(MusicFadeOutCo(fadeOut));
+                musicFadeCo = StartCoroutine(MusicFadeOutCo(fadeOut));
             }
             else
             {

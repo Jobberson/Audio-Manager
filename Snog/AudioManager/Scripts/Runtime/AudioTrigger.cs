@@ -32,39 +32,59 @@ namespace Snog.Scripts
         }
 
         [Header("Trigger")]
-        [SerializeField][Tag] private string TagToCompare = "Player";
-        [SerializeField] private bool fireOnEnter = true;
-        [SerializeField] private bool fireOnExit = false;
+        [SerializeField]
+        [Tag]
+        private string TagToCompare = "Player";
+
+        [SerializeField]
+        private bool fireOnEnter = true;
+
+        [SerializeField]
+        private bool fireOnExit = false;
 
         [Header("Audio")]
-        [SerializeField] private TriggerAudioType audioType = TriggerAudioType.SFX;
-        [SerializeField] private TriggerAudioAction action = TriggerAudioAction.Play2D;
+        [SerializeField]
+        private TriggerAudioType audioType = TriggerAudioType.SFX;
+
+        [SerializeField]
+        private TriggerAudioAction action = TriggerAudioAction.Play2D;
 
         [Header("SFX")]
-        [SerializeField] private SoundClipData sfxClip;
+        [SerializeField]
+        private SoundClipData sfxClip;
+
         [Range(0f, 1f)]
-        [SerializeField] private float sfxVolume = 1f;
+        [SerializeField]
+        private float sfxVolume = 1f;
 
         [Header("Music")]
-        [SerializeField] private MusicTrack musicTrack;
+        [SerializeField]
+        private MusicTrack musicTrack;
 
         [Header("Ambient")]
-        [SerializeField] private AmbientTrack ambientTrack;
+        [SerializeField]
+        private AmbientTrack ambientTrack;
 
         [Tooltip("Optional: Assign a reusable AmbientProfile asset to avoid runtime allocations. If null, a runtime profile will be cached and used.")]
-        [SerializeField] private AmbientProfile ambientProfileAsset;
+        [SerializeField]
+        private AmbientProfile ambientProfileAsset;
 
         [Header("Timing")]
-        [SerializeField] private float playDelay = 0f;
-        [SerializeField] private float fadeDuration = 1f;
+        [SerializeField]
+        private float playDelay = 0f;
+
+        [SerializeField]
+        private float fadeDuration = 1f;
 
         [Header("3D")]
-        [SerializeField] private bool useOverride3DPosition = false;
-        [SerializeField] private Vector3 override3DPosition = Vector3.zero;
+        [SerializeField]
+        private bool useOverride3DPosition = false;
+
+        [SerializeField]
+        private Vector3 override3DPosition = Vector3.zero;
 
         private int ambientToken = -1;
         private Coroutine routine;
-
         private AmbientProfile cachedRuntimeProfile;
 
         private void Reset()
@@ -142,15 +162,15 @@ namespace Snog.Scripts
 
         private void HandleSfx(AudioManager manager, Vector3 otherPosition)
         {
-            if (sfxClip == null || string.IsNullOrEmpty(sfxClip.soundName))
-            {
+            if(sfxClip == null || string.IsNullOrEmpty(sfxClip.soundName))
                 return;
-            }
+
+            float v = Mathf.Clamp01(sfxVolume);
 
             switch (action)
             {
                 case TriggerAudioAction.Play2D:
-                    manager.PlaySfx2D(sfxClip.soundName);
+                    manager.PlaySfx2D(sfxClip.soundName, v);
                     break;
 
                 case TriggerAudioAction.Play3D:
@@ -158,7 +178,7 @@ namespace Snog.Scripts
                         ? transform.TransformPoint(override3DPosition)
                         : transform.position;
 
-                    manager.PlaySfx3D(sfxClip.soundName, pos);
+                    manager.PlaySfx3D(sfxClip.soundName, pos, v);
                     break;
             }
         }
