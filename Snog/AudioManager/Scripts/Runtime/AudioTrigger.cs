@@ -26,62 +26,42 @@ namespace Snog.Scripts
             Stop,
             StopMusic,
             PopAmbient,
-            SnapshotCombat,
-            SnapshotStealth,
-            SnapshotUnderwater
+            Snapshot
         }
 
         [Header("Trigger")]
-        [SerializeField]
-        [Tag]
-        private string TagToCompare = "Player";
-
-        [SerializeField]
-        private bool fireOnEnter = true;
-
-        [SerializeField]
-        private bool fireOnExit = false;
+        [SerializeField, Tag] private string TagToCompare = "Player";
+        [SerializeField] private bool fireOnEnter = true;
+        [SerializeField] private bool fireOnExit = false;
 
         [Header("Audio")]
-        [SerializeField]
-        private TriggerAudioType audioType = TriggerAudioType.SFX;
-
-        [SerializeField]
-        private TriggerAudioAction action = TriggerAudioAction.Play2D;
+        [SerializeField] private TriggerAudioType audioType = TriggerAudioType.SFX;
+        [SerializeField] private TriggerAudioAction action = TriggerAudioAction.Play2D;
 
         [Header("SFX")]
-        [SerializeField]
-        private SoundClipData sfxClip;
+        [SerializeField] private SoundClipData sfxClip;
 
-        [Range(0f, 1f)]
-        [SerializeField]
-        private float sfxVolume = 1f;
+        [SerializeField, Range(0f, 1f)] private float sfxVolume = 1f;
 
         [Header("Music")]
-        [SerializeField]
-        private MusicTrack musicTrack;
+        [SerializeField] private MusicTrack musicTrack;
 
         [Header("Ambient")]
-        [SerializeField]
-        private AmbientTrack ambientTrack;
+        [SerializeField] private AmbientTrack ambientTrack;
+
+        [Header("Snapshots")]
+        [SerializeField] private string snapshotName = "Default";
 
         [Tooltip("Optional: Assign a reusable AmbientProfile asset to avoid runtime allocations. If null, a runtime profile will be cached and used.")]
-        [SerializeField]
-        private AmbientProfile ambientProfileAsset;
+        [SerializeField] private AmbientProfile ambientProfileAsset;
 
         [Header("Timing")]
-        [SerializeField]
-        private float playDelay = 0f;
-
-        [SerializeField]
-        private float fadeDuration = 1f;
+        [SerializeField] private float playDelay = 0f;
+        [SerializeField] private float fadeDuration = 1f;
 
         [Header("3D")]
-        [SerializeField]
-        private bool useOverride3DPosition = false;
-
-        [SerializeField]
-        private Vector3 override3DPosition = Vector3.zero;
+        [SerializeField] private bool useOverride3DPosition = false;
+        [SerializeField] private Vector3 override3DPosition = Vector3.zero;
 
         private int ambientToken = -1;
         private Coroutine routine;
@@ -201,16 +181,8 @@ namespace Snog.Scripts
                     manager.StopMusic(fadeDuration);
                     break;
 
-                case TriggerAudioAction.SnapshotCombat:
-                    manager.TransitionToSnapshot(AudioManager.SnapshotType.Combat, fadeDuration);
-                    break;
-
-                case TriggerAudioAction.SnapshotStealth:
-                    manager.TransitionToSnapshot(AudioManager.SnapshotType.Stealth, fadeDuration);
-                    break;
-
-                case TriggerAudioAction.SnapshotUnderwater:
-                    manager.TransitionToSnapshot(AudioManager.SnapshotType.Underwater, fadeDuration);
+                case TriggerAudioAction.Snapshot:
+                    manager.TransitionToSnapshot(snapshotName, fadeDuration);
                     break;
             }
         }

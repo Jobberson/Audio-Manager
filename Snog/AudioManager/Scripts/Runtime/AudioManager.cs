@@ -31,14 +31,6 @@ namespace Snog.Audio
             FX
         }
 
-        public enum SnapshotType
-        {
-            Default,
-            Combat,
-            Stealth,
-            Underwater
-        }
-
         [Serializable]
         private sealed class AmbientStackEntry
         {
@@ -55,6 +47,14 @@ namespace Snog.Audio
             public float targetVolume01;
         }
 
+        [Serializable]
+        public sealed class MixerSnapshotEntry
+        {
+            [Tooltip("Unique name used to reference this snapshot at runtime.")]
+            public string name;
+            public AudioMixerSnapshot snapshot;
+        }
+
         #endregion
 
         #region Mixer / Volumes
@@ -65,17 +65,15 @@ namespace Snog.Audio
         [SerializeField] private AudioMixerGroup ambientGroup;
         [SerializeField] private AudioMixerGroup fxGroup;
 
-        [Header("Snapshots")]
-        [SerializeField] private AudioMixerSnapshot defaultSnapshot;
-        [SerializeField] private AudioMixerSnapshot combatSnapshot;
-        [SerializeField] private AudioMixerSnapshot stealthSnapshot;
-        [SerializeField] private AudioMixerSnapshot underwaterSnapshot;
-
-        [Header("Volumes (0..1)")]
+        [Header("Volume")]
         [SerializeField, Range(0f, 1f)] private float masterVolume = 1f;
         [SerializeField, Range(0f, 1f)] private float musicVolume = 1f;
         [SerializeField, Range(0f, 1f)] private float ambientVolume = 1f;
         [SerializeField, Range(0f, 1f)] private float fxVolume = 1f;
+
+        [Header("Snapshots")]
+        [SerializeField] private List<MixerSnapshotEntry> snapshots = new List<MixerSnapshotEntry>();
+        private Dictionary<string, AudioMixerSnapshot> snapshotLookup;
 
         #endregion
 
@@ -160,17 +158,18 @@ namespace Snog.Audio
         protected override void Awake()
         {
             base.Awake();
-
             GetLibraries();
 
-#if UNITY_EDITOR
+        #if UNITY_EDITOR
             AutoAssignMixerAndGroups_EditorOnly();
-#endif
+        #endif
 
             CreateCoreSources();
             ApplyMixerRouting();
             ApplyAllMixerVolumes();
             InitializeFxPoolIfNeeded();
+
+            BuildSnapshotLookup();
 
             StartAmbientLoopIfNeeded();
         }
@@ -179,6 +178,7 @@ namespace Snog.Audio
         private void OnValidate()
         {
             GetLibraries();
+            BuildSnapshotLookup();
         }
 #endif
 
@@ -260,23 +260,87 @@ namespace Snog.Audio
             return -80f;
         }
 
-        public void TransitionToSnapshot(SnapshotType snapshot, float transitionTime)
+        public void TransitionToSnapshot(string snapshotName, float transitionTime)
         {
-            switch (snapshot)
+            if (string.IsNullOrWhiteSpace(snapshotName))
             {
-                case SnapshotType.Default:
-                    if (defaultSnapshot != null) defaultSnapshot.TransitionTo(transitionTime);
-                    break;
-                case SnapshotType.Combat:
-                    if (combatSnapshot != null) combatSnapshot.TransitionTo(transitionTime);
-                    break;
-                case SnapshotType.Stealth:
-                    if (stealthSnapshot != null) stealthSnapshot.TransitionTo(transitionTime);
-                    break;
-                case SnapshotType.Underwater:
-                    if (underwaterSnapshot != null) underwaterSnapshot.TransitionTo(transitionTime);
-                    break;
+                Debug.LogWarning("AudioManager: snapshotName is null/empty.", this);
+                return;
             }
+
+            if (snapshotLookup == null)
+                BuildSnapshotLookup();
+
+            string key = snapshotName.Trim();
+
+            if (snapshotLookup == null || snapshotLookup.Count == 0)
+            {
+                Debug.LogWarning("AudioManager: No snapshots configured in the snapshots list.", this);
+                return;
+            }
+
+            if (!snapshotLookup.TryGetValue(key, out AudioMixerSnapshot snapshot) || snapshot == null)
+            {
+                Debug.LogWarning($"AudioManager: Snapshot '{key}' not found (check AudioManager > Snapshots list).", this);
+                return;
+            }
+
+            snapshot.TransitionTo(transitionTime);
+        }
+
+        private void BuildSnapshotLookup()
+        {
+            snapshotLookup = new Dictionary<string, AudioMixerSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+            if (snapshots == null)
+                return;
+
+            for (int i = 0; i < snapshots.Count; i++)
+            {
+                MixerSnapshotEntry entry = snapshots[i];
+
+                if (entry == null)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(entry.name))
+                    continue;
+
+                if (entry.snapshot == null)
+                    continue;
+
+                string key = entry.name.Trim();
+
+                if (snapshotLookup.ContainsKey(key))
+                    Debug.LogWarning($"AudioManager: Duplicate snapshot name '{key}'. The later entry will overwrite the earlier one.", this);
+
+                snapshotLookup[key] = entry.snapshot;
+            }
+        }
+
+        public string[] GetSnapshotNames()
+        {
+            if (snapshots == null || snapshots.Count == 0)
+                return Array.Empty<string>();
+
+            List<string> names = new List<string>(snapshots.Count);
+
+            for (int i = 0; i < snapshots.Count; i++)
+            {
+                MixerSnapshotEntry entry = snapshots[i];
+
+                if (entry == null)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(entry.name))
+                    continue;
+
+                if (entry.snapshot == null)
+                    continue;
+
+                names.Add(entry.name.Trim());
+            }
+
+            return names.ToArray();
         }
 
         #endregion

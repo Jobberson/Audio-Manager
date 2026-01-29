@@ -55,7 +55,14 @@ namespace Snog.Audio.Editor
         {
             manager = (AudioManager)target;
 
-            snapshotOptions = System.Enum.GetNames(typeof(AudioManager.SnapshotType));
+            snapshotOptions = manager.GetSnapshotNames();
+
+            if (snapshotOptions == null || snapshotOptions.Length == 0)
+            {
+                snapshotOptions = new[] { "No Snapshots Configured" };
+                selectedSnapshotIndex = 0;
+            }
+
             audioFolderPathProp = serializedObject.FindProperty("audioFolderPath");
 
             RefreshClipLists();
@@ -486,16 +493,36 @@ namespace Snog.Audio.Editor
             {
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    selectedSnapshotIndex = EditorGUILayout.Popup("Snapshot", selectedSnapshotIndex, snapshotOptions);
-                    using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
+                    // Refresh every draw so list edits show up immediately
+                    snapshotOptions = manager.GetSnapshotNames();
+                    bool hasSnapshots = snapshotOptions != null && snapshotOptions.Length > 0;
+
+                    if (!hasSnapshots)
                     {
-                        if (GUILayout.Button("🔀 Switch Snapshot"))
+                        snapshotOptions = new[] { "No Snapshots Configured" };
+                        selectedSnapshotIndex = 0;
+                    }
+
+                    using (new EditorGUI.DisabledScope(!hasSnapshots))
+                    {
+                        selectedSnapshotIndex = EditorGUILayout.Popup("Snapshot", selectedSnapshotIndex, snapshotOptions);
+                        selectedSnapshotIndex = Mathf.Clamp(selectedSnapshotIndex, 0, snapshotOptions.Length - 1);
+
+                        using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying))
                         {
-                            manager.TransitionToSnapshot((AudioManager.SnapshotType)selectedSnapshotIndex, 1f);
+                            if (GUILayout.Button("🔀 Switch Snapshot"))
+                            {
+                                string snapshotName = snapshotOptions[selectedSnapshotIndex];
+                                manager.TransitionToSnapshot(snapshotName, 1f);
+                            }
                         }
                     }
+
+                    if (!hasSnapshots)
+                        EditorGUILayout.HelpBox("Add snapshots in AudioManager > Snapshots (User-Defined).", MessageType.Info);
                 }
             }
+
             EditorGUILayout.EndFoldoutHeaderGroup();
         }
 
