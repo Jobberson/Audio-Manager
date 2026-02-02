@@ -1,5 +1,7 @@
-# Snog’s Audio Manager
+# Snog’s Audio Manager for Unity
 
+[![Unity Version](https://img.shields.io/badge/Unity-2022.3%2B-blue.svg)](https://unity3d.com/get-unity/download)
+[![Version](https://img.shields.io/badge/Version-1.0.0-green.svg)](version)
   
 
 **Snog’s Audio Manager** is a complete Unity audio solution for **2D SFX**, **3D SFX**, **music**, and **ambient soundscapes**, built for **fast setup**, **clean workflows**, and **Asset Store-quality usability**.
