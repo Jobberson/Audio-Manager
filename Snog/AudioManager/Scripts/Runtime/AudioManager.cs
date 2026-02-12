@@ -915,11 +915,6 @@ namespace Snog.Audio
                 if (musicGroup == null) musicGroup = FindGroup(mainMixer, new string[] { "Music", "Master/Music" });
                 if (ambientGroup == null) ambientGroup = FindGroup(mainMixer, new string[] { "Ambient", "Master/Ambient", "Ambience" });
                 if (fxGroup == null) fxGroup = FindGroup(mainMixer, new string[] { "FX", "SFX", "Master/FX", "Master/SFX" });
-
-                if (defaultSnapshot == null) defaultSnapshot = mainMixer.FindSnapshot("Default");
-                if (combatSnapshot == null) combatSnapshot = mainMixer.FindSnapshot("Combat");
-                if (stealthSnapshot == null) stealthSnapshot = mainMixer.FindSnapshot("Stealth");
-                if (underwaterSnapshot == null) underwaterSnapshot = mainMixer.FindSnapshot("Underwater");
             }
         }
 

@@ -20,7 +20,7 @@ namespace Snog.Audio.Utils
         public bool randomStartTime = true;
 
         [Header("Pitch (random)")]
-        public Vector2 pitchRange = new Vector2(1f, 1f);
+        public Vector2 pitchRange = new(1f, 1f);
 
         public void Validate()
         {
@@ -39,9 +39,8 @@ namespace Snog.Audio.Utils
                 pitchRange.y = 0.01f;
 
             if (pitchRange.y < pitchRange.x)
-                float tmp = pitchRange.x;
-                pitchRange.x = pitchRange.y;
-                pitchRange.y = tmp;
+            {
+                (pitchRange.y, pitchRange.x) = (pitchRange.x, pitchRange.y);
             }
         }
     }

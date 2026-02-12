@@ -14,7 +14,6 @@ namespace Snog.Audio.Clips
 
         [Header("Audio")]
         public AudioClip clip;
-
         public bool loop = true;
 
         [Header("Defaults")]
@@ -29,9 +28,12 @@ namespace Snog.Audio.Clips
         private void OnValidate()
         {
             if (string.IsNullOrWhiteSpace(trackName))
-            {
                 trackName = name;
-            }
+
+            trackName = trackName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(moodTag))
+                moodTag = moodTag.Trim();
 
             defaultVolume = Mathf.Clamp01(defaultVolume);
         }

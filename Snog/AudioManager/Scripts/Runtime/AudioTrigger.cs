@@ -3,6 +3,7 @@ using UnityEngine;
 using Snog.Audio;
 using Snog.Audio.Clips;
 using Snog.Audio.Utils;
+using Snog.Audio.Attribute;
 
 namespace Snog.Scripts
 {
@@ -69,8 +70,7 @@ namespace Snog.Scripts
 
         private void Reset()
         {
-            Collider c = GetComponent<Collider>();
-            if (c != null)
+            if (TryGetComponent<Collider>(out var c))
                 c.isTrigger = true;
         }
 
@@ -231,8 +231,7 @@ namespace Snog.Scripts
 
             cachedRuntimeProfile.layers = new AmbientLayer[]
             {
-                new AmbientLayer
-                {
+                new() {
                     track = ambientTrack,
                     volume = 1f
                 }

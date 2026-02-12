@@ -84,22 +84,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 7935759798148413701}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f9db860c3b5cd9440b4915ef61f6070b, type: 3}
+  m_Script: {fileID: 11500000, guid: 7bbf0a54568ccac4f962729db2ee3121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mainMixer: {fileID: 0}
-  musicGroup: {fileID: 0}
-  ambientGroup: {fileID: 0}
-  fxGroup: {fileID: 0}
-  defaultSnapshot: {fileID: 0}
-  combatSnapshot: {fileID: 0}
-  stealthSnapshot: {fileID: 0}
-  underwaterSnapshot: {fileID: 0}
+  mainMixer: {fileID: 24100000, guid: d7c1885fb389aa044b493f64d70dfb4b, type: 2}
+  musicGroup: {fileID: 7587474111679367004, guid: d7c1885fb389aa044b493f64d70dfb4b, type: 2}
+  ambientGroup: {fileID: 3260813268776289562, guid: d7c1885fb389aa044b493f64d70dfb4b, type: 2}
+  fxGroup: {fileID: -6665354797900035794, guid: d7c1885fb389aa044b493f64d70dfb4b, type: 2}
   masterVolume: 1
   musicVolume: 1
   ambientVolume: 1
   fxVolume: 1
-  musicLoop: 1
+  snapshots: []
   fxPoolSize: 10
   fxPool: {fileID: 0}
   maxAmbientVoices: 16

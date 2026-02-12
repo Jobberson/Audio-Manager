@@ -25,7 +25,7 @@ namespace Snog.Audio.Libraries
         [Header("Inline sound data (quick edit)")]
         public InlineSoundData[] inlineSounds;
 
-        private Dictionary<string, AudioClip[]> soundDict = new Dictionary<string, AudioClip[]>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, AudioClip[]> soundDict = new(StringComparer.OrdinalIgnoreCase);
         private bool built = false;
 
         private void Awake()

@@ -2,6 +2,8 @@
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
 using Snog.Audio.Clips;
 using Snog.Scripts;
 
@@ -23,8 +25,10 @@ namespace Snog.Audio.Editor
 
         // References
         private SerializedProperty sfxClipProp;
+        private SerializedProperty sfxVolumeProp;
         private SerializedProperty musicTrackProp;
         private SerializedProperty ambientTrackProp;
+        private SerializedProperty snapshotNameProp;
 
         // Params
         private SerializedProperty playDelayProp;
@@ -43,6 +47,27 @@ namespace Snog.Audio.Editor
         private static bool previewSupported;
         private static string previewUnsupportedReason;
 
+        // Valid actions for each audio type
+        private static readonly Dictionary<AudioTrigger.TriggerAudioType, AudioTrigger.TriggerAudioAction[]> validActions = new Dictionary<AudioTrigger.TriggerAudioType, AudioTrigger.TriggerAudioAction[]>
+        {
+            { AudioTrigger.TriggerAudioType.SFX, new[] { 
+                AudioTrigger.TriggerAudioAction.Play2D, 
+                AudioTrigger.TriggerAudioAction.Play3D 
+            }},
+            { AudioTrigger.TriggerAudioType.Music, new[] { 
+                AudioTrigger.TriggerAudioAction.Play, 
+                AudioTrigger.TriggerAudioAction.PlayFadeIn, 
+                AudioTrigger.TriggerAudioAction.StopMusic, 
+                AudioTrigger.TriggerAudioAction.Snapshot 
+            }},
+            { AudioTrigger.TriggerAudioType.Ambient, new[] { 
+                AudioTrigger.TriggerAudioAction.Play, 
+                AudioTrigger.TriggerAudioAction.PlayFadeIn, 
+                AudioTrigger.TriggerAudioAction.Stop, 
+                AudioTrigger.TriggerAudioAction.PopAmbient 
+            }}
+        };
+
         private void OnEnable()
         {
             trigger = (AudioTrigger)target;
@@ -56,8 +81,10 @@ namespace Snog.Audio.Editor
             actionProp = serializedObject.FindProperty("action") ?? serializedObject.FindProperty("Action");
 
             sfxClipProp = serializedObject.FindProperty("sfxClip") ?? serializedObject.FindProperty("SfxClip");
+            sfxVolumeProp = serializedObject.FindProperty("sfxVolume") ?? serializedObject.FindProperty("SfxVolume");
             musicTrackProp = serializedObject.FindProperty("musicTrack") ?? serializedObject.FindProperty("MusicTrack");
             ambientTrackProp = serializedObject.FindProperty("ambientTrack") ?? serializedObject.FindProperty("AmbientTrack");
+            snapshotNameProp = serializedObject.FindProperty("snapshotName") ?? serializedObject.FindProperty("SnapshotName");
 
             playDelayProp = serializedObject.FindProperty("playDelay") ?? serializedObject.FindProperty("PlayDelay");
             fadeDurationProp = serializedObject.FindProperty("fadeDuration") ?? serializedObject.FindProperty("FadeDuration");
@@ -151,12 +178,18 @@ namespace Snog.Audio.Editor
 
                 if (audioTypeProp != null)
                 {
+                    EditorGUI.BeginChangeCheck();
                     EditorGUILayout.PropertyField(audioTypeProp, new GUIContent("Audio Type"));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        // When audio type changes, validate and reset action if needed
+                        ValidateAndResetAction();
+                    }
                 }
 
                 if (actionProp != null)
                 {
-                    EditorGUILayout.PropertyField(actionProp, new GUIContent("Action"));
+                    DrawFilteredActionDropdown();
                 }
 
                 // Defensive: if either prop is missing, bail out gracefully
@@ -188,6 +221,50 @@ namespace Snog.Audio.Editor
             }
         }
 
+        private void DrawFilteredActionDropdown()
+        {
+            var currentType = (AudioTrigger.TriggerAudioType)audioTypeProp.enumValueIndex;
+            var currentAction = (AudioTrigger.TriggerAudioAction)actionProp.enumValueIndex;
+
+            // Get valid actions for current type
+            if (!validActions.TryGetValue(currentType, out var allowedActions))
+            {
+                EditorGUILayout.PropertyField(actionProp, new GUIContent("Action"));
+                return;
+            }
+
+            // Create display options
+            string[] displayOptions = allowedActions.Select(a => ObjectNames.NicifyVariableName(a.ToString())).ToArray();
+            
+            // Find current selection index
+            int currentIndex = System.Array.IndexOf(allowedActions, currentAction);
+            if (currentIndex < 0) currentIndex = 0; // Default to first valid option if current is invalid
+
+            // Draw popup
+            int newIndex = EditorGUILayout.Popup("Action", currentIndex, displayOptions);
+
+            // Apply selection
+            if (newIndex >= 0 && newIndex < allowedActions.Length)
+            {
+                actionProp.enumValueIndex = (int)allowedActions[newIndex];
+            }
+        }
+
+        private void ValidateAndResetAction()
+        {
+            var currentType = (AudioTrigger.TriggerAudioType)audioTypeProp.enumValueIndex;
+            var currentAction = (AudioTrigger.TriggerAudioAction)actionProp.enumValueIndex;
+
+            if (!validActions.TryGetValue(currentType, out var allowedActions))
+                return;
+
+            // If current action is not valid for the new type, reset to first valid action
+            if (!allowedActions.Contains(currentAction))
+            {
+                actionProp.enumValueIndex = (int)allowedActions[0];
+            }
+        }
+
         private void DrawSfxSection(AudioTrigger.TriggerAudioAction action)
         {
             if (sfxClipProp != null)
@@ -200,6 +277,12 @@ namespace Snog.Audio.Editor
                 return;
             }
 
+            // Draw volume slider
+            if (sfxVolumeProp != null)
+            {
+                EditorGUILayout.Slider(sfxVolumeProp, 0f, 1f, new GUIContent("Volume"));
+            }
+
             var so = sfxClipProp.objectReferenceValue as SoundClipData;
             if (so == null || so.clips == null || so.clips.Length == 0)
             {
@@ -209,7 +292,7 @@ namespace Snog.Audio.Editor
 
             using (new EditorGUI.DisabledScope(!previewSupported))
             {
-                if (GUILayout.Button("🎧 Preview First Variant"))
+                if (GUILayout.Button("🎧 Preview"))
                 {
                     PlayPreviewSafe(so.clips[0]);
                 }
@@ -218,12 +301,11 @@ namespace Snog.Audio.Editor
             if (action == AudioTrigger.TriggerAudioAction.Play3D)
             {
                 EditorGUILayout.Space(4);
+                EditorGUILayout.LabelField("3D Position Override", EditorStyles.boldLabel);
 
-                // If the runtime has the toggle, show it and conditionally show the vector.
-                // If not, gracefully fall back to always showing the vector field (old behavior).
                 if (useOverride3DPositionProp != null)
                 {
-                    EditorGUILayout.PropertyField(useOverride3DPositionProp, new GUIContent("Use Override 3D Position"));
+                    EditorGUILayout.PropertyField(useOverride3DPositionProp, new GUIContent("Use Override"));
 
                     if (useOverride3DPositionProp.boolValue)
                     {
@@ -255,6 +337,19 @@ namespace Snog.Audio.Editor
 
         private void DrawMusicSection(AudioTrigger.TriggerAudioAction action)
         {
+            // Show snapshot name field if action is Snapshot
+            if (action == AudioTrigger.TriggerAudioAction.Snapshot)
+            {
+                if (snapshotNameProp != null)
+                {
+                    EditorGUILayout.PropertyField(snapshotNameProp, new GUIContent("Snapshot Name"));
+                }
+                
+                EditorGUILayout.HelpBox("This will transition to the specified audio mixer snapshot.", MessageType.Info);
+                return;
+            }
+
+            // Otherwise show music track
             if (musicTrackProp != null)
             {
                 EditorGUILayout.PropertyField(musicTrackProp, new GUIContent("Music Track"));

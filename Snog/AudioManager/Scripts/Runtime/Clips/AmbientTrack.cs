@@ -27,9 +27,12 @@ namespace Snog.Audio.Clips
         private void OnValidate()
         {
             if (string.IsNullOrWhiteSpace(trackName))
-            {
                 trackName = name;
-            }
+
+            trackName = trackName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(moodTag))
+                moodTag = moodTag.Trim();
 
             defaultVolume = Mathf.Clamp01(defaultVolume);
         }

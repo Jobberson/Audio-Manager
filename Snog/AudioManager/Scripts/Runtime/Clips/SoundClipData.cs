@@ -28,12 +28,10 @@ namespace Snog.Audio.Clips
 
             if (clips != null && clips.Length > 0)
             {
-                bool hasAny = false;
                 for (int i = 0; i < clips.Length; i++)
                 {
                     if (clips[i] != null)
                     {
-                        hasAny = true;
                         break;
                     }
                 }

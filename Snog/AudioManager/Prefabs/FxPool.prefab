@@ -41,10 +41,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 3993198725438802260}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: df2d1db0745ce6f4490f5c0435468eb8, type: 3}
+  m_Script: {fileID: 11500000, guid: ca0f68dc459decd46aa4cdcfba081d00, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   poolSize: 10
+  maxExtraSources: 10
   fxGroup: {fileID: -6665354797900035794, guid: d7c1885fb389aa044b493f64d70dfb4b, type: 2}
   rolloffMode: 0
   minDistance: 1
