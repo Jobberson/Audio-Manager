@@ -37,6 +37,13 @@ namespace Snog.Audio
         {
             poolSize = Mathf.Max(1, size);
             fxGroup = group;
+            
+            // ADDED: Validation warning
+            if (fxGroup == null)
+            {
+                Debug.LogWarning("[AudioSourcePool] FX mixer group not assigned. Sounds will be unrouted.");
+            }
+            
             RebuildPool();
             initialized = true;
         }
@@ -117,29 +124,52 @@ namespace Snog.Audio
             StartCoroutine(ReturnWhenFinished(src));
         }
 
+        // FIXED: Memory leak when AudioSource is destroyed externally
         private IEnumerator ReturnWhenFinished(AudioSource src)
         {
+            // Wait for playback to finish
             while (src != null && src.isPlaying)
             {
                 yield return null;
             }
 
-            if (src == null)
+            // Clean up the source if it still exists
+            if (src != null)
             {
-                yield break;
+                src.Stop();
+                src.clip = null;
+                ApplyDefaults(src);
             }
 
-            src.Stop();
-            src.clip = null;
-            ApplyDefaults(src);
+            // CRITICAL FIX: Always remove from inUse, even if source was destroyed
+            if (inUse.Contains(src))
+            {
+                inUse.Remove(src);
+            }
 
-            inUse.Remove(src);
-            available.Enqueue(src);
+            // Only return to pool if source still exists
+            if (src != null)
+            {
+                available.Enqueue(src);
+            }
+            else
+            {
+                // Source was destroyed externally - log for debugging
+                Debug.LogWarning("[AudioSourcePool] AudioSource was destroyed externally. This may indicate a scene unload or manual destruction.");
+            }
         }
 
         public int GetActiveSourceCount()
         {
             return inUse.Count;
+        }
+        
+        // ADDED: Helper to get pool statistics
+        public void GetPoolStats(out int active, out int available, out int total)
+        {
+            active = inUse.Count;
+            available = this.available.Count;
+            total = active + available;
         }
     }
 }

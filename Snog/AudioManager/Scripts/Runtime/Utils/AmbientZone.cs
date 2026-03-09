@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+using Snog.Audio.Attribute;
+
 namespace Snog.Audio.Utils
 {
     [AddComponentMenu("Snog/AudioManager/Ambient Zone")]
@@ -36,27 +38,21 @@ namespace Snog.Audio.Utils
 
         [Header("Zone")]
         [Tooltip("Which profile should be activated when the player enters this zone.")]
-        [SerializeField]
-        private AmbientProfile profile;
+        [SerializeField] private AmbientProfile profile;
 
         [Tooltip("Only colliders with this tag will trigger the zone. Leave empty to accept any tag.")]
-        [SerializeField]
-        private string tagToCompare = "Player";
+        [SerializeField, Tag] private string tagToCompare = "Player";
 
         [Header("Mode")]
-        [SerializeField]
-        private ZoneMode mode = ZoneMode.Stack;
+        [SerializeField] private ZoneMode mode = ZoneMode.Stack;
 
         [Tooltip("Used only in Stack mode. Higher priority wins when voice budget is exceeded.")]
-        [SerializeField]
-        private int stackPriority = 0;
+        [SerializeField] private int stackPriority = 0;
 
         [Header("Enter Behavior")]
-        [SerializeField]
-        private bool fadeOnEnter = true;
+        [SerializeField] private bool fadeOnEnter = true;
 
-        [SerializeField]
-        private float enterFadeDuration = 2f;
+        [SerializeField] private float enterFadeDuration = 2f;
 
         [Header("Exit Behavior")]
         [Tooltip(
@@ -69,18 +65,14 @@ namespace Snog.Audio.Utils
             " StopFade - Pop token with exit fade\n" +
             " StopImmediate - Pop token instantly"
         )]
-        [SerializeField]
-        private ExitAction exitAction = ExitAction.None;
+        [SerializeField] private ExitAction exitAction = ExitAction.None;
 
-        [SerializeField]
-        private float exitFadeDuration = 2f;
+        [SerializeField] private float exitFadeDuration = 2f;
 
         [Header("Gizmos")]
-        [SerializeField]
-        private Color gizmoColor = new(0.2f, 0.7f, 0.4f, 0.25f);
+        [SerializeField] private Color gizmoColor = new(0.2f, 0.7f, 0.4f, 0.25f);
 
-        [SerializeField]
-        private Color gizmoWireColor = new(0.2f, 0.7f, 0.4f, 1f);
+        [SerializeField] private Color gizmoWireColor = new(0.2f, 0.7f, 0.4f, 1f);
 
         private readonly HashSet<Collider> inside = new HashSet<Collider>();
         private int ambientToken = -1;

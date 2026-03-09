@@ -74,10 +74,12 @@ namespace Snog.Audio.Libraries
             built = true;
         }
 
+        // FIXED: Consistent key normalization throughout
         private void BuildDictionary()
         {
             soundDict.Clear();
 
+            // Process ScriptableObject tracks
             if (tracks != null)
             {
                 foreach (var s in tracks)
@@ -91,15 +93,19 @@ namespace Snog.Audio.Libraries
                     if (s.clips == null || s.clips.Length == 0)
                         continue;
 
+                    // FIXED: Use normalized key for both checking and insertion
                     string key = NormalizeKey(s.soundName);
 
-                    if (soundDict.ContainsKey(s.soundName))
+                    if (soundDict.ContainsKey(key))
+                    {
                         Debug.LogWarning($"[SoundLibrary] Duplicate soundName '{s.soundName}' from ScriptableObject list. Overwriting previous entry.", this);
+                    }
 
-                    soundDict[s.soundName] = s.clips;
+                    soundDict[key] = s.clips;
                 }
             }
 
+            // Process inline sounds
             if (inlineSounds != null)
             {
                 foreach (var i in inlineSounds)
@@ -110,15 +116,18 @@ namespace Snog.Audio.Libraries
                     if (string.IsNullOrEmpty(i.soundName))
                         continue;
 
-                    if(i.clips == null || i.clips.Length == 0)
+                    if (i.clips == null || i.clips.Length == 0)
                         continue;
 
+                    // FIXED: Use normalized key for both checking and insertion
                     string key = NormalizeKey(i.soundName);
 
-                    if (soundDict.ContainsKey(i.soundName))
+                    if (soundDict.ContainsKey(key))
+                    {
                         Debug.LogWarning($"[SoundLibrary] Inline sound '{i.soundName}' is overriding an existing entry (likely from ScriptableObjects).", this);
+                    }
 
-                    soundDict[i.soundName] = i.clips;
+                    soundDict[key] = i.clips;
                 }
             }
         }
@@ -132,9 +141,14 @@ namespace Snog.Audio.Libraries
 
             string key = NormalizeKey(name);
 
-            if(soundDict.TryGetValue(key, out var clips) && clips != null && clips.Length > 0)
+            if (soundDict.TryGetValue(key, out var clips) && clips != null && clips.Length > 0)
+            {
+                // Return random variant from available clips
                 return clips[UnityEngine.Random.Range(0, clips.Length)];
+            }
 
+            // ADDED: Warning when sound not found
+            Debug.LogWarning($"[SoundLibrary] Sound '{name}' not found in library.");
             return null;
         }
 
@@ -156,7 +170,36 @@ namespace Snog.Audio.Libraries
 
         private string NormalizeKey(string raw)
         {
+            if (string.IsNullOrEmpty(raw))
+                return string.Empty;
+
             return raw.Trim().ToLowerInvariant();
+        }
+
+        // ADDED: Helper to check if sound exists without playing
+        public bool HasSound(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            EnsureBuilt();
+            string key = NormalizeKey(name);
+            return soundDict.ContainsKey(key);
+        }
+
+        // ADDED: Get variant count for a sound
+        public int GetVariantCount(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return 0;
+
+            EnsureBuilt();
+            string key = NormalizeKey(name);
+
+            if (soundDict.TryGetValue(key, out var clips) && clips != null)
+                return clips.Length;
+
+            return 0;
         }
 
 #if UNITY_EDITOR

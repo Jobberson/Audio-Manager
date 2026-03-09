@@ -184,6 +184,11 @@ namespace Snog.Audio
             string ambientFolder = EnsureSubfolder(generatedFolder, "Ambient");
             string sfxFolder = EnsureSubfolder(generatedFolder, "SFX");
 
+            // ADDED: Load existing assets to check for duplicates
+            var existingMusic = LoadExistingAssets<MusicTrack>(musicFolder);
+            var existingAmbient = LoadExistingAssets<AmbientTrack>(ambientFolder);
+            var existingSfx = LoadExistingAssets<SoundClipData>(sfxFolder);
+
             string[] clipGuids = AssetDatabase.FindAssets("t:AudioClip", new[] { audioFolderPath });
             int total = clipGuids.Length;
 
@@ -191,6 +196,9 @@ namespace Snog.Audio
             int createdMusic = 0;
             int createdAmbient = 0;
             int createdSfx = 0;
+            int skippedMusic = 0;
+            int skippedAmbient = 0;
+            int skippedSfx = 0;
 
             try
             {
@@ -242,6 +250,14 @@ namespace Snog.Audio
                     if (isMusic)
                     {
                         string assetName = SanitizeAssetName(fileName);
+                        
+                        // FIXED: Check if asset already exists with same clip
+                        if (AssetExistsWithSameClip(existingMusic, assetName, clip))
+                        {
+                            skippedMusic++;
+                            continue;
+                        }
+
                         string assetPath = GetUniqueAssetPath(musicFolder, assetName);
 
                         var mt = ScriptableObject.CreateInstance<MusicTrack>();
@@ -257,6 +273,14 @@ namespace Snog.Audio
                     if (isAmbient)
                     {
                         string assetName = SanitizeAssetName(fileName);
+                        
+                        // FIXED: Check if asset already exists with same clip
+                        if (AssetExistsWithSameClip(existingAmbient, assetName, clip))
+                        {
+                            skippedAmbient++;
+                            continue;
+                        }
+
                         string assetPath = GetUniqueAssetPath(ambientFolder, assetName);
 
                         var at = ScriptableObject.CreateInstance<AmbientTrack>();
@@ -315,6 +339,13 @@ namespace Snog.Audio
                         (float)groupIndex / Mathf.Max(1, sfxGroups.Count)
                     );
 
+                    // FIXED: Check if SFX group already exists with same clips
+                    if (SfxGroupExistsWithSameClips(existingSfx, kv.Key, kv.Value))
+                    {
+                        skippedSfx++;
+                        continue;
+                    }
+
                     string assetPath = GetUniqueAssetPath(sfxFolder, kv.Key);
 
                     var sd = ScriptableObject.CreateInstance<SoundClipData>();
@@ -333,7 +364,12 @@ namespace Snog.Audio
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"Generated assets — Music: {createdMusic}, Ambient: {createdAmbient}, SFX groups: {createdSfx}", this);
+            Debug.Log(
+                $"Generated assets — Music: {createdMusic} created, {skippedMusic} skipped | " +
+                $"Ambient: {createdAmbient} created, {skippedAmbient} skipped | " +
+                $"SFX: {createdSfx} created, {skippedSfx} skipped",
+                this
+            );
         }
 
         public void AssignToLibraries()
@@ -491,6 +527,78 @@ namespace Snog.Audio
 
                 suffix++;
             }
+        }
+
+        /// <summary>
+        /// Loads all existing assets of type T from the specified folder.
+        /// Returns a dictionary mapping sanitized names to the assets.
+        /// </summary>
+        private Dictionary<string, T> LoadExistingAssets<T>(string folder) where T : UnityEngine.Object
+        {
+            var result = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+
+            if (!AssetDatabase.IsValidFolder(folder))
+                return result;
+
+            string typeFilter = typeof(T).Name;
+            string[] guids = AssetDatabase.FindAssets($"t:{typeFilter}", new[] { folder });
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+
+                if (asset != null)
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(path);
+                    string sanitized = SanitizeAssetName(fileName);
+                    result[sanitized] = asset;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Checks if a MusicTrack or AmbientTrack already exists with the same clip reference.
+        /// </summary>
+        private bool AssetExistsWithSameClip<T>(Dictionary<string, T> existing, string assetName, AudioClip clip) where T : UnityEngine.Object
+        {
+            if (!existing.TryGetValue(assetName, out var existingAsset))
+                return false;
+
+            // Check if it's MusicTrack
+            if (existingAsset is MusicTrack mt)
+            {
+                return mt.clip == clip;
+            }
+
+            // Check if it's AmbientTrack
+            if (existingAsset is AmbientTrack at)
+            {
+                return at.clip == clip;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Checks if a SoundClipData already exists with the same clip array.
+        /// </summary>
+        private bool SfxGroupExistsWithSameClips(Dictionary<string, SoundClipData> existing, string groupKey, List<AudioClip> clips)
+        {
+            if (!existing.TryGetValue(groupKey, out var existingData))
+                return false;
+
+            // Check if the clip arrays are identical
+            if (existingData.clips == null || existingData.clips.Length != clips.Count)
+                return false;
+
+            // Compare clips (order-independent)
+            var existingSet = new HashSet<AudioClip>(existingData.clips);
+            var newSet = new HashSet<AudioClip>(clips);
+
+            return existingSet.SetEquals(newSet);
         }
 
         #endregion

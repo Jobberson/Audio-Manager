@@ -41,7 +41,6 @@ namespace Snog.Scripts
 
         [Header("SFX")]
         [SerializeField] private SoundClipData sfxClip;
-
         [SerializeField, Range(0f, 1f)] private float sfxVolume = 1f;
 
         [Header("Music")]
@@ -142,7 +141,7 @@ namespace Snog.Scripts
 
         private void HandleSfx(AudioManager manager, Vector3 otherPosition)
         {
-            if(sfxClip == null || string.IsNullOrEmpty(sfxClip.soundName))
+            if (sfxClip == null || string.IsNullOrEmpty(sfxClip.soundName))
                 return;
 
             float v = Mathf.Clamp01(sfxVolume);
@@ -208,11 +207,7 @@ namespace Snog.Scripts
                 case TriggerAudioAction.Stop:
                 case TriggerAudioAction.PopAmbient:
                 {
-                    if (ambientToken != -1)
-                    {
-                        manager.PopAmbientToken(ambientToken, fadeDuration);
-                        ambientToken = -1;
-                    }
+                    CleanupAmbientToken();
                     break;
                 }
             }
@@ -240,16 +235,76 @@ namespace Snog.Scripts
             return cachedRuntimeProfile;
         }
 
-        private void OnDisable()
+        // IMPROVED: Consolidated cleanup method
+        private void CleanupAmbientToken()
         {
             if (ambientToken == -1)
                 return;
 
             AudioManager manager = AudioManager.Instance;
             if (manager != null)
+            {
                 manager.PopAmbientToken(ambientToken, fadeDuration);
+            }
 
             ambientToken = -1;
         }
+
+        // IMPROVED: Cleanup on disable
+        private void OnDisable()
+        {
+            CleanupAmbientToken();
+            
+            // Stop any running coroutines
+            if (routine != null)
+            {
+                StopCoroutine(routine);
+                routine = null;
+            }
+        }
+
+        // ADDED: Cleanup on destroy as safety net
+        private void OnDestroy()
+        {
+            CleanupAmbientToken();
+            
+            // Clean up runtime profile if created
+            if (cachedRuntimeProfile != null)
+            {
+                Destroy(cachedRuntimeProfile);
+                cachedRuntimeProfile = null;
+            }
+        }
+
+#if UNITY_EDITOR
+        // ADDED: Visual debugging in editor
+        private void OnDrawGizmosSelected()
+        {
+            if (!TryGetComponent<Collider>(out var collider))
+                return;
+
+            // Draw trigger bounds
+            Gizmos.color = fireOnEnter ? Color.green : Color.yellow;
+            
+            if (collider is BoxCollider box)
+            {
+                Gizmos.matrix = transform.localToWorldMatrix;
+                Gizmos.DrawWireCube(box.center, box.size);
+            }
+            else if (collider is SphereCollider sphere)
+            {
+                Gizmos.DrawWireSphere(transform.position + sphere.center, sphere.radius);
+            }
+
+            // Draw 3D position override if used
+            if (useOverride3DPosition && action == TriggerAudioAction.Play3D)
+            {
+                Gizmos.color = Color.cyan;
+                Vector3 worldPos = transform.TransformPoint(override3DPosition);
+                Gizmos.DrawWireSphere(worldPos, 0.2f);
+                UnityEditor.Handles.Label(worldPos, "Audio Position");
+            }
+        }
+#endif
     }
 }

@@ -1,4 +1,5 @@
 ﻿﻿using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Snog.Audio.Clips;
@@ -13,8 +14,11 @@ namespace Snog.Audio.Libraries
     {
         [Header("ScriptableObject Ambient Clips")]
         public List<AmbientTrack> tracks = new();
-        private Dictionary<string, AudioClip> ambientDictionary = new();
+        
+        // FIXED: Case-insensitive dictionary
+        private Dictionary<string, AudioClip> ambientDictionary = new(StringComparer.OrdinalIgnoreCase);
         private bool built = false;
+
         private void Awake()
         {
             // Build now for runtime usage; mark built so runtime calls are fast.
@@ -28,8 +32,10 @@ namespace Snog.Audio.Libraries
         private void EnsureBuilt()
         {
             if (built) return;
+
             BuildDictionary();
-            #if UNITY_EDITOR
+
+#if UNITY_EDITOR
             try
             {
                 string[] guids = AssetDatabase.FindAssets("t:AmbientTrack");
@@ -37,11 +43,23 @@ namespace Snog.Audio.Libraries
                 {
                     string path = AssetDatabase.GUIDToAssetPath(g);
                     var asset = AssetDatabase.LoadAssetAtPath<AmbientTrack>(path);
-                    if (asset == null) continue;
-                    if (string.IsNullOrEmpty(asset.trackName)) continue;
-                    if (asset.clip == null) continue;
-                    if (!ambientDictionary.ContainsKey(asset.trackName))
-                        ambientDictionary[asset.trackName] = asset.clip;
+
+                    if (asset == null)
+                        continue;
+
+                    if (string.IsNullOrEmpty(asset.trackName))
+                        continue;
+
+                    if (asset.clip == null)
+                        continue;
+
+                    // FIXED: Use normalized key
+                    string key = NormalizeKey(asset.trackName);
+
+                    if (!ambientDictionary.ContainsKey(key))
+                    {
+                        ambientDictionary[key] = asset.clip;
+                    }
                 }
             }
             catch (System.Exception ex)
@@ -61,19 +79,45 @@ namespace Snog.Audio.Libraries
             {
                 foreach (var a in tracks)
                 {
-                    if (a == null) continue;
-                    if (string.IsNullOrEmpty(a.trackName)) continue;
-                    if (a.clip == null) continue;
-                    ambientDictionary[a.trackName] = a.clip;
+                    if (a == null)
+                        continue;
+
+                    if (string.IsNullOrEmpty(a.trackName))
+                        continue;
+
+                    if (a.clip == null)
+                        continue;
+
+                    // FIXED: Use normalized key for both check and insertion
+                    string key = NormalizeKey(a.trackName);
+
+                    if (ambientDictionary.ContainsKey(key))
+                    {
+                        Debug.LogWarning($"[AmbientLibrary] Duplicate trackName '{a.trackName}' found. Overwriting previous entry.", this);
+                    }
+
+                    ambientDictionary[key] = a.clip;
                 }
             }
         }
 
         public AudioClip GetClipFromName(string name)
         {
-            if (string.IsNullOrEmpty(name)) return null;
+            if (string.IsNullOrEmpty(name))
+                return null;
+
             EnsureBuilt();
-            if (ambientDictionary.TryGetValue(name, out var clip)) return clip;
+
+            // FIXED: Use normalized key for lookup
+            string key = NormalizeKey(name);
+
+            if (ambientDictionary.TryGetValue(key, out var clip))
+            {
+                return clip;
+            }
+
+            // ADDED: Warning when clip not found
+            Debug.LogWarning($"[AmbientLibrary] Ambient track '{name}' not found in library.");
             return null;
         }
 
@@ -100,12 +144,33 @@ namespace Snog.Audio.Libraries
 #endif
         }
 
+        // ADDED: Key normalization method
+        private string NormalizeKey(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return string.Empty;
+
+            return raw.Trim().ToLowerInvariant();
+        }
+
+        // ADDED: Helper to check if track exists without warnings
+        public bool HasTrack(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            EnsureBuilt();
+            string key = NormalizeKey(name);
+            return ambientDictionary.ContainsKey(key);
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Rebuild Ambient Dictionary")]
         public void Editor_RebuildDictionary()
         {
             RebuildDictionaries();
         }
+
         // Run when the component is edited in inspector — mark cache dirty so queries rebuild.
         private void OnValidate()
         {

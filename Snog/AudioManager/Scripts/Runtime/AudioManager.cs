@@ -21,6 +21,13 @@ namespace Snog.Audio
     [RequireComponent(typeof(AmbientLibrary))]
     public sealed partial class AudioManager : Singleton<AudioManager>
     {
+
+        private const float SCORE_WEIGHT_PRIORITY = 1000f;
+        private const float SCORE_WEIGHT_EMITTER = 100f;
+        private const float SCORE_WEIGHT_VOLUME = 10f;
+        private const float SCORE_WEIGHT_DISTANCE = 1f;
+        private const float VOLUME_EPSILON = 0.0001f;
+        
         #region Types
 
         public enum AudioChannel
@@ -109,9 +116,13 @@ namespace Snog.Audio
         [Tooltip("Optional override for listener transform. If null, auto-detects AudioListener.")]
         [SerializeField] private Transform listenerOverride;
 
-        private readonly List<ScoredEmitter> scoredCache = new List<ScoredEmitter>(64);
-        private readonly HashSet<AmbientEmitter> allowedCache = new HashSet<AmbientEmitter>();
-        private readonly HashSet<AmbientTrack> usedTracksCache = new HashSet<AmbientTrack>();
+        private readonly List<ScoredEmitter> scoredCache = new(64);
+        private readonly HashSet<AmbientEmitter> allowedCache = new();
+        private readonly HashSet<AmbientTrack> usedTracksCache = new();
+        private AudioListener cachedListener;
+        private Transform cachedListenerTransform;
+        private float lastListenerCheckTime;
+        private const float LISTENER_RECHECK_INTERVAL = 1f;
 
         #endregion
 
@@ -139,8 +150,8 @@ namespace Snog.Audio
 
         #region Ambient Stack / Emitters
 
-        private readonly List<AmbientEmitter> emitters = new List<AmbientEmitter>();
-        private readonly List<AmbientStackEntry> ambientStack = new List<AmbientStackEntry>();
+        private readonly List<AmbientEmitter> emitters = new();
+        private readonly List<AmbientStackEntry> ambientStack = new();
 
         private Coroutine ambientLoopCo;
         private int ambientTokenCounter = 1;
@@ -352,42 +363,67 @@ namespace Snog.Audio
             PlaySfx2D(soundName, 1f);
         }
 
-        public void PlaySfx2D(string soundName, float volume)
-        {
-            if(soundLibrary == null || fx2DSource == null)
-            {
-                Debug.LogWarning("AudioManager: SoundLibrary or fx2DSource is null. Cannot play SFX 2D.");
-                GetLibraries();
-                return;
-            }
-
-            InitializeFxPoolIfNeeded();
-
-            AudioClip clip = soundLibrary.GetClipFromName(soundName);
-            if (clip == null)
-            {
-                return;
-            }
-
-            fx2DSource.PlayOneShot(clip, Mathf.Clamp01(volume));
-        }
-
-        public void PlaySfx3D(string soundName, Vector3 position, float volume)
+        /// <summary>
+        /// Plays a 2D sound effect.
+        /// </summary>
+        /// <param name="soundName">Name of the sound as defined in SoundLibrary.</param>
+        /// <param name="volume">Volume multiplier (0-1). Uses clip's default if -1.</param>
+        /// <returns>True if sound was found and played, false otherwise.</returns>
+        public bool PlaySfx2D(string soundName, float volume = -1f)
         {
             if (soundLibrary == null)
             {
-                return;
+                Debug.LogWarning("[AudioManager] SoundLibrary not found. Cannot play SFX.");
+                return false;
             }
 
-            InitializeFxPoolIfNeeded();
+            if (fx2DSource == null)
+            {
+                Debug.LogError("[AudioManager] FX 2D AudioSource is null. Cannot play sound.");
+                return false;
+            }
 
             AudioClip clip = soundLibrary.GetClipFromName(soundName);
+            
+            // ADDED: Null check (GetClipFromName already logs warning)
             if (clip == null)
+                return false;
+
+            float vol = volume < 0f ? 1f : Mathf.Clamp01(volume);
+            fx2DSource.PlayOneShot(clip, vol);
+            return true;
+        }
+
+        /// <summary>
+        /// Plays a 3D sound effect at a world position.
+        /// </summary>
+        /// <param name="soundName">Name of the sound as defined in SoundLibrary.</param>
+        /// <param name="position">World position to play the sound.</param>
+        /// <param name="volume">Volume multiplier (0-1). Uses clip's default if -1.</param>
+        /// <returns>True if sound was found and played, false otherwise.</returns>
+        public bool PlaySfx3D(string soundName, Vector3 position, float volume = -1f)
+        {
+            if (soundLibrary == null)
             {
-                return;
+                Debug.LogWarning("[AudioManager] SoundLibrary not found. Cannot play SFX.");
+                return false;
             }
 
-            fxPool.PlayClip(clip, position, Mathf.Clamp01(volume));
+            if (fxPool == null)
+            {
+                Debug.LogError("[AudioManager] FX Pool is null. Cannot play 3D sound.");
+                return false;
+            }
+
+            AudioClip clip = soundLibrary.GetClipFromName(soundName);
+            
+            // ADDED: Null check
+            if (clip == null)
+                return false;
+
+            float vol = volume < 0f ? 1f : Mathf.Clamp01(volume);
+            fxPool.PlayClip(clip, position, vol);
+            return true;
         }
 
         public void PlaySfx3D(string soundName, Vector3 position)
@@ -399,53 +435,83 @@ namespace Snog.Audio
 
         #region Music API
      
-        public void PlayMusic(string trackName, float delay = 0f, float fadeIn = 0f)
+        /// <summary>
+        /// Plays a music track with optional delay and fade-in.
+        /// </summary>
+        /// <param name="trackName">Name of the music track as defined in MusicLibrary.</param>
+        /// <param name="startDelay">Delay before starting playback (seconds).</param>
+        /// <param name="fadeDuration">Fade-in duration (seconds). 0 = instant.</param>
+        /// <returns>True if music started successfully, false otherwise.</returns>
+        public bool PlayMusic(string trackName, float startDelay = 0f, float fadeDuration = 0f)
         {
-            if(musicLibrary == null || musicSource == null)
-                return;
+            if (musicLibrary == null)
+            {
+                Debug.LogWarning("[AudioManager] MusicLibrary not found. Cannot play music.");
+                return false;
+            }
 
             MusicTrack track = musicLibrary.GetTrackFromName(trackName);
-            if(track == null || track.clip == null)
-                return;
 
-            if (musicFadeCo != null)
+            // ADDED: Null checks
+            if (track == null)
             {
-                StopCoroutine(musicFadeCo);
-                musicFadeCo = null;
+                Debug.LogWarning($"[AudioManager] Music track '{trackName}' not found in library.");
+                return false;
             }
+
+            if (track.clip == null)
+            {
+                Debug.LogWarning($"[AudioManager] Music track '{trackName}' has no AudioClip assigned.");
+                return false;
+            }
+
+            if (musicSource == null)
+            {
+                Debug.LogError("[AudioManager] Music AudioSource is null. Cannot play music.");
+                return false;
+            }
+
+            StopMusicFadeCoroutine();
 
             musicSource.clip = track.clip;
             musicSource.loop = track.loop;
-            ApplyMixerRouting();
+            musicSource.volume = 0f;
 
-            if (fadeIn > 0f)
-                musicFadeCo = StartCoroutine(MusicFadeInCo(delay, fadeIn));
+            if (fadeDuration > 0f)
+            {
+                musicFadeCo = StartCoroutine(FadeInMusic(startDelay, fadeDuration));
+            }
             else
             {
-                musicSource.volume = 1f;
-                musicSource.PlayDelayed(Mathf.Max(0f, delay));
+                if (startDelay > 0f)
+                {
+                    musicFadeCo = StartCoroutine(PlayAfterDelay(startDelay));
+                }
+                else
+                {
+                    musicSource.volume = 1f;
+                    musicSource.Play();
+                }
             }
+
+            return true;
         }
 
-        public void StopMusic(float fadeOut = 0f)
+        public void StopMusic(float fadeSeconds = 0f)
         {
-            if (musicSource == null)
-                return;
+            StopMusicFadeCoroutine();  // Clean up any running fade
 
-            if (musicFadeCo != null)
+            if (fadeSeconds <= 0f)
             {
-                StopCoroutine(musicFadeCo);
-                musicFadeCo = null;
-            }
-
-            if (fadeOut > 0f)
-            {
-                musicFadeCo = StartCoroutine(MusicFadeOutCo(fadeOut));
+                if (musicSource != null)
+                {
+                    musicSource.Stop();
+                    musicSource.clip = null;
+                }
             }
             else
             {
-                musicSource.Stop();
-                musicSource.clip = null;
+                musicFadeCo = StartCoroutine(FadeOutAndStop(fadeSeconds));
             }
         }
 
@@ -488,6 +554,33 @@ namespace Snog.Audio
             musicSource.volume = start;
         }
 
+        private void StopMusicFadeCoroutine()
+        {
+            if (musicFadeCo != null)
+            {
+                StopCoroutine(musicFadeCo);
+                musicFadeCo = null;
+            }
+        }
+
+        private IEnumerator FadeInMusic(float startDelay, float fadeDuration)
+        {
+            yield return MusicFadeInCo(startDelay, fadeDuration);
+        }
+
+        private IEnumerator PlayAfterDelay(float delay)
+        {
+            if (musicSource == null) yield break;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            musicSource.volume = 1f;
+            musicSource.Play();
+        }
+
+        private IEnumerator FadeOutAndStop(float fadeSeconds)
+        {
+            yield return MusicFadeOutCo(fadeSeconds);
+        }
+
         #endregion
 
         #region Ambient API
@@ -520,11 +613,13 @@ namespace Snog.Audio
 
             if (profile != null)
             {
-                AmbientStackEntry e = new AmbientStackEntry();
-                e.token = ambientTokenCounter++;
-                e.profile = profile;
-                e.priority = 0;
-                e.fadeSeconds = f;
+                AmbientStackEntry e = new()
+                {
+                    token = ambientTokenCounter++,
+                    profile = profile,
+                    priority = 0,
+                    fadeSeconds = f
+                };
                 ambientStack.Add(e);
             }
 
@@ -548,11 +643,13 @@ namespace Snog.Audio
 
             float f = fade < 0f ? defaultAmbientFade : Mathf.Max(0f, fade);
 
-            AmbientStackEntry e = new AmbientStackEntry();
-            e.token = ambientTokenCounter++;
-            e.profile = profile;
-            e.priority = priority;
-            e.fadeSeconds = f;
+            AmbientStackEntry e = new()
+            {
+                token = ambientTokenCounter++,
+                profile = profile,
+                priority = priority,
+                fadeSeconds = f
+            };
             ambientStack.Add(e);
 
             ambientCurrentFade = f;
@@ -611,9 +708,19 @@ namespace Snog.Audio
 
         private IEnumerator AmbientLoopCo()
         {
+            
+            float nextCleanupTime = 0f;
+            const float CLEANUP_INTERVAL = 5f;  // Clean up every 5 seconds
+
             while (true)
             {
-                CleanupEmitters();
+                float now = Time.time;
+
+                if (now >= nextCleanupTime)
+                {
+                    CleanupNullEmitters();
+                    nextCleanupTime = now + CLEANUP_INTERVAL;
+                }
 
                 if (emitters.Count == 0 && ambientStack.Count == 0)
                 {
@@ -649,35 +756,75 @@ namespace Snog.Audio
             ambientNextRescoreTime = 0f;
         }
 
-        private void CleanupEmitters()
+        private void CleanupNullEmitters()
         {
-            for (int i = emitters.Count - 1; i >= 0; i--)
-            {
-                if (emitters[i] == null)
-                {
-                    emitters.RemoveAt(i);
-                }
-            }
+            emitters.RemoveAll(e => e == null);
         }
 
         private Transform GetListenerTransform()
         {
-            if (listenerOverride != null) return listenerOverride;
+            if (listenerOverride != null)
+                return listenerOverride;
 
-#if UNITY_2023_1_OR_NEWER
-            AudioListener listener = FindFirstObjectByType<AudioListener>();
-#else
-          AudioListener listener = FindObjectOfType<AudioListener>();
-#endif
+            // Re-check periodically in case listener changed
+            float now = Time.time;
+            if (cachedListener == null || now - lastListenerCheckTime > LISTENER_RECHECK_INTERVAL)
+            {
+                cachedListener = FindAnyObjectByType<AudioListener>();
+                cachedListenerTransform = cachedListener != null ? cachedListener.transform : null;
+                lastListenerCheckTime = now;
+            }
 
-            if (listener != null) return listener.transform;
-
-            if (Camera.main != null) return Camera.main.transform;
-
-            return null;
+            return cachedListenerTransform;
         }
 
-        
+        private void ProcessAmbientStack()
+        {
+            desiredVolumeByTrack.Clear();
+            desiredPriorityByTrack.Clear();
+
+            for (int i = 0; i < ambientStack.Count; i++)
+            {
+                AmbientStackEntry entry = ambientStack[i];
+
+                // ADDED: Null and empty validation
+                if (entry == null || entry.profile == null)
+                    continue;
+
+                if (entry.profile.layers == null || entry.profile.layers.Length == 0)
+                    continue;
+
+                for (int j = 0; j < entry.profile.layers.Length; j++)
+                {
+                    AmbientLayer layer = entry.profile.layers[j];
+
+                    // ADDED: Layer validation
+                    if (layer == null || layer.track == null)
+                        continue;
+
+                    int combinedPriority = entry.priority + layer.priority;
+
+                    if (!desiredPriorityByTrack.ContainsKey(layer.track))
+                        desiredPriorityByTrack[layer.track] = combinedPriority;
+                    else
+                        desiredPriorityByTrack[layer.track] = Mathf.Max(desiredPriorityByTrack[layer.track], combinedPriority);
+
+                    float v = Mathf.Clamp01(layer.volume);
+
+                    if (!desiredVolumeByTrack.ContainsKey(layer.track))
+                    {
+                        desiredVolumeByTrack[layer.track] = v;
+                        desiredPriorityByTrack[layer.track] = entry.priority;
+                    }
+                    else
+                    {
+                        desiredVolumeByTrack[layer.track] = Mathf.Max(desiredVolumeByTrack[layer.track], v);
+                        desiredPriorityByTrack[layer.track] = Mathf.Max(desiredPriorityByTrack[layer.track], entry.priority);
+                    }
+                }
+            }
+        }
+
         private void ApplyAmbientTargets()
         {
             desiredVolumeByTrack.Clear();
@@ -755,10 +902,12 @@ namespace Snog.Audio
 
                 if (!desiredVolumeByTrack.TryGetValue(em.Track, out float baseVol01))
                 {
-                    ScoredEmitter se = new ScoredEmitter();
-                    se.emitter = em;
-                    se.score = float.NegativeInfinity;
-                    se.targetVolume01 = 0f;
+                    ScoredEmitter se = new()
+                    {
+                        emitter = em,
+                        score = float.NegativeInfinity,
+                        targetVolume01 = 0f
+                    };
                     scoredCache.Add(se);
                     continue;
                 }
@@ -767,12 +916,17 @@ namespace Snog.Audio
                 float dist = listener != null ? Vector3.Distance(listenerPos, em.transform.position) : 0f;
                 float audibility = 1f / (1f + dist);
 
-                float score = (trackPriority * 1000f) + (em.EmitterPriority * 100f) + (baseVol01 * 10f) + audibility;
+                float score = (trackPriority * SCORE_WEIGHT_PRIORITY) 
+                    + (em.EmitterPriority * SCORE_WEIGHT_EMITTER) 
+                    + (baseVol01 * SCORE_WEIGHT_VOLUME) 
+                    + audibility;
 
-                ScoredEmitter sEntry = new ScoredEmitter();
-                sEntry.emitter = em;
-                sEntry.score = score;
-                sEntry.targetVolume01 = baseVol01;
+                ScoredEmitter sEntry = new()
+                {
+                    emitter = em,
+                    score = score,
+                    targetVolume01 = baseVol01
+                };
                 scoredCache.Add(sEntry);
             }
 

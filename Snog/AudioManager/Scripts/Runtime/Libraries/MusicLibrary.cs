@@ -1,4 +1,5 @@
 ﻿﻿using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Snog.Audio.Clips;
@@ -13,8 +14,11 @@ namespace Snog.Audio.Libraries
     {
         [Header("ScriptableObject Music Clips")]
         public List<MusicTrack> tracks = new();
-        private Dictionary<string, MusicTrack> musicDictionary = new();
+        
+        // FIXED: Case-insensitive dictionary
+        private Dictionary<string, MusicTrack> musicDictionary = new(StringComparer.OrdinalIgnoreCase);
         private bool built = false;
+
         private void Awake()
         {
             BuildDictionary();
@@ -37,23 +41,20 @@ namespace Snog.Audio.Libraries
                     var asset = AssetDatabase.LoadAssetAtPath<MusicTrack>(path);
 
                     if (asset == null)
-                    {
                         continue;
-                    }
 
                     if (string.IsNullOrEmpty(asset.trackName))
-                    {
                         continue;
-                    }
 
                     if (asset.clip == null)
-                    {
                         continue;
-                    }
 
-                    if (!musicDictionary.ContainsKey(asset.trackName))
+                    // FIXED: Use normalized key
+                    string key = NormalizeKey(asset.trackName);
+                    
+                    if (!musicDictionary.ContainsKey(key))
                     {
-                        musicDictionary[asset.trackName] = asset;
+                        musicDictionary[key] = asset;
                     }
                 }
             }
@@ -75,21 +76,23 @@ namespace Snog.Audio.Libraries
                 foreach (var m in tracks)
                 {
                     if (m == null)
-                    {
                         continue;
-                    }
 
                     if (string.IsNullOrEmpty(m.trackName))
-                    {
                         continue;
-                    }
 
                     if (m.clip == null)
-                    {
                         continue;
+
+                    // FIXED: Use normalized key for both check and insertion
+                    string key = NormalizeKey(m.trackName);
+
+                    if (musicDictionary.ContainsKey(key))
+                    {
+                        Debug.LogWarning($"[MusicLibrary] Duplicate trackName '{m.trackName}' found. Overwriting previous entry.", this);
                     }
 
-                    musicDictionary[m.trackName] = m;
+                    musicDictionary[key] = m;
                 }
             }
         }
@@ -97,17 +100,20 @@ namespace Snog.Audio.Libraries
         public MusicTrack GetTrackFromName(string name)
         {
             if (string.IsNullOrEmpty(name))
-            {
                 return null;
-            }
 
             EnsureBuilt();
 
-            if (musicDictionary.TryGetValue(name, out var track))
+            // FIXED: Use normalized key for lookup
+            string key = NormalizeKey(name);
+
+            if (musicDictionary.TryGetValue(key, out var track))
             {
                 return track;
             }
 
+            // ADDED: Warning when track not found
+            Debug.LogWarning($"[MusicLibrary] Music track '{name}' not found in library.");
             return null;
         }
 
@@ -131,6 +137,26 @@ namespace Snog.Audio.Libraries
             EditorUtility.SetDirty(this);
             Debug.Log($"[MusicLibrary] RebuildDictionaries: found {musicDictionary.Count} tracks.");
 #endif
+        }
+
+        // ADDED: Key normalization method
+        private string NormalizeKey(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return string.Empty;
+
+            return raw.Trim().ToLowerInvariant();
+        }
+
+        // ADDED: Helper to check if track exists without warnings
+        public bool HasTrack(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            EnsureBuilt();
+            string key = NormalizeKey(name);
+            return musicDictionary.ContainsKey(key);
         }
 
 #if UNITY_EDITOR

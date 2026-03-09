@@ -6,21 +6,17 @@ namespace Snog.Audio.Utils
     [System.Serializable]
     public class AmbientLayer
     {
-        [Header("Clip")]
+        [Header("Clip")] 
         public AmbientTrack track;
 
         [Header("Mix")]
-        [Range(0f, 1f)]
-        public float volume = 1f;
+        [Range(0f, 1f)] public float volume = 1f;
 
-        [Tooltip("Higher priority layers are kept when voice budget is exceeded.")]
-        public int priority = 0;
+        [Tooltip("Higher priority layers are kept when voice budget is exceeded.")] public int priority = 0;
 
-        [Header("Playback")]
-        public bool randomStartTime = true;
+        [Header("Playback")] public bool randomStartTime = true;
 
-        [Header("Pitch (random)")]
-        public Vector2 pitchRange = new(1f, 1f);
+        [Header("Pitch (random)")] public Vector2 pitchRange = new(1f, 1f);
 
         public void Validate()
         {
