@@ -1,323 +1,463 @@
-# Snog’s Audio Manager for Unity
+<div align="center">
 
-[![Unity Version](https://img.shields.io/badge/Unity-2022.3%2B-blue.svg)](https://unity3d.com/get-unity/download)
-[![Version](https://img.shields.io/badge/Version-1.0.0-green.svg)](version)
-  
+<h1>♪ Snog's Audio Manager for Unity ♪</h1>
 
-**Snog’s Audio Manager** is a complete Unity audio solution for **2D SFX**, **3D SFX**, **music**, and **ambient soundscapes**, built for **fast setup**, and **clean workflows**.
+**A lightweight, production-oriented audio framework.**  
+Centralized control · Pooled 3D SFX · Ambient zones · One-click import pipeline
 
-  
+---
 
-It includes:
+[![Unity](https://img.shields.io/badge/Unity-2022.3%2B-black?style=flat-square&logo=unity&logoColor=white)](https://unity.com)
+[![License](https://img.shields.io/badge/License-Asset%20Store%20EULA-informational?style=flat-square)](https://unity.com/legal/as-terms)
+[![Asset Store](https://img.shields.io/badge/Unity%20Asset%20Store-Buy-success?style=flat-square&logo=unity)](https://assetstore.unity.com)
+[![Support](https://img.shields.io/badge/Support-Email-orange?style=flat-square&logo=gmail&logoColor=white)](mailto:snogdev@gmail.com)
 
-- **ScriptableObject-based libraries** for SFX, Music, and Ambient tracks.
-- **Audio Mixer integration** with exposed volume parameters + snapshot transitions.
-- **Editor tooling** to scan an audio folder, auto-generate assets, and assign them into libraries.
-- A modern ambient system built around:
-	-   **Ambient Profiles** (*WHAT* ambience should be active)
-	*   **Ambient Zones** (*WHEN* profiles activate)
-	*   **Ambient Emitters** placed in the scene (*WHERE* 3D ambience comes from) 
+</div>
 
-  
+---
 
-***
+## Why Snog' Audio Manager?
 
-  
+Most Unity projects end up with the same audio spaghetti — `AudioSource` components scattered everywhere, magic strings throughout the codebase, and ambient sound that requires a programmer every time a level designer wants to change a zone.
+
+Snog replaces all of that with a single `AudioManager` singleton and a set of inspector-driven components that non-programmers can own.
+
+The highlight is the **one-click import pipeline**: point it at your audio folder, hit ```Scan → Generate → Assign```, and it classifies every clip, creates all your ScriptableObject assets, populates the libraries, and emits an `AudioNames.cs` constants file so you never type a sound name as a raw string again.
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [AudioNames.cs — Compile-Time Safety](#audionamescs--compile-time-safety)
+- [Ambient System](#ambient-system-deep-dive)
+- [Events & Callbacks](#events--callbacks)
+- [Requirements](#requirements)
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+
+---
 
 ## Features
 
-###  Quick setup
+<details open>
+<summary><strong>🎮 Core</strong></summary>
+<br>
 
-*   Drop the **AudioManager** prefab (or component) into the scene.
-*   Use the **Utilities** panel to **Scan → Generate → Assign** audio assets automatically.
+- Central `AudioManager` singleton — `DontDestroyOnLoad`, zero setup code required
+- Mixer-routed audio with `MasterVolume`, `MusicVolume`, `AmbientVolume`, `FXVolume`
+- Named mixer snapshot transitions via `TransitionToSnapshot`
+- Thread-safe singleton base class with `#if UNITY_EDITOR || DEVELOPMENT_BUILD` log guards — no log spam in shipping builds
 
-###  In-Editor Preview
+</details>
 
-*   Preview SFX/Music clips directly in the inspector (no need to open files manually).
+<details open>
+<summary><strong>🔫 SFX</strong></summary>
+<br>
 
-###  Mixer & Snapshots
+- 2D oneshot SFX via `PlaySfx2D`
+- 3D spatial SFX via a pooled `AudioSourcePool` (`PlaySfx3D`)
+- Multi-variant `SoundClipData` — store multiple clip takes, randomised on every play
+- Rate-limited pool exhaustion warning — dropped sounds never go silently missing
 
-*   Built-in mixer volume controls (Master/Music/Ambient/FX) using exposed mixer parameters.
-*   Snapshot transitions (Default/Combat/Stealth/Underwater).
+</details>
 
-### 2D + 3D SFX
+<details open>
+<summary><strong>🎵 Music</strong></summary>
+<br>
 
-*   2D SFX via a dedicated 2D source.
-*   3D SFX via an **AudioSourcePool** for efficient voice reuse.
+- `PlayMusic` with optional start delay and fade-in
+- `StopMusic` with fade-out
+- `CrossFadeMusic` — simultaneous fade-out + fade-in, **no silent gap between tracks**
 
-### Ambient System (Profiles + Zones + 3D Emitters)
+</details>
 
-*   **Profiles** define layered ambience (wind, hum, insects, etc.).
-*   **Zones** push/replace profiles based on player position.
-*   **Emitters** are placed in the scene to anchor 3D ambience to real locations *(new system)*.
+<details open>
+<summary><strong>🌿 Ambient System</strong></summary>
+<br>
 
-***
+- `AmbientEmitter` — world-space source, self-registers with the manager
+- `AmbientProfile` — ScriptableObject soundscape definition (layers of tracks + volumes)
+- Priority-weighted voice budgeting with distance scoring (`maxAmbientVoices`)
+- Profile stack: `PushAmbientProfile` / `PopAmbientToken` for layered zone transitions
+- `AmbientZone` — zero-code trigger volumes, `Replace` and `Stack` modes
+- Per-layer playback overrides (`randomStartTime`, `pitchRange`) opt-in per profile
 
-## Table of Contents
+</details>
 
-1.  Core Concepts
-2.  Quick Start
-3.  Ambient Workflow (Profiles + Zones + Emitters)
-4.  Using AudioManager in Code
-5.  Audio Mixer Setup
-6.  Troubleshooting / FAQ
+<details open>
+<summary><strong>🛠️ Editor Tooling</strong></summary>
+<br>
 
-***
+- **Scan → Generate → Assign** one-click import pipeline
+- Auto-classifies clips by folder name, filename hints, and duration thresholds
+- Groups SFX variants by parent folder or filename prefix into `SoundClipData` assets
+- Populates `SoundLibrary`, `MusicLibrary`, `AmbientLibrary` in one step
+- Emits `AudioNames.cs` — compile-time constants for every sound, music, and ambient name
+- Runtime inspector: playback testing, mixer dB meters, ambient stack browser, emitter list
+- Editor clip preview via `UnityEditor.AudioUtil`
 
-## Core Concepts
+</details>
 
-### AudioManager
-
-The central runtime singleton:
-
-*   Plays SFX (2D/3D), plays/stops music, controls mixer volumes, transitions snapshots.
-
-### Libraries
-
-ScriptableObject-driven libraries store your audio references by name:
-
-*   `SoundLibrary` (SFX name → variants)
-*   `MusicLibrary` (trackName → clip)
-*   `AmbientLibrary` (trackName → clip)
-
-### Clips / Tracks
-
-*   **SFX** use `SoundClipData` (name + multiple variants).
-*   **Music** uses `MusicTrack` (name + clip).
-*   **Ambient** uses `AmbientTrack` (name + clip).
-
-### Ambient Profiles
-
-`AmbientProfile` is a layered ambience recipe:
-
-*   each `AmbientLayer` references an `AmbientTrack` and defines mix/playback settings (volume, spatialBlend, random start, pitch range).
-
-### Ambient Zones
-
-Zones activate ambience via profiles when the player enters/exits trigger volumes.
-
-### Ambient Emitters (Scene-based 3D ambience)
-
-Emitters are **placed objects** that represent 3D ambient sources in the world *(new system)*:
-
-*   “River here”, “Generator hum here”, “Wind near cliff here”.
-*   The ambient system selects which emitters are allowed to play based on active profiles and voice budget.
-
-***
+---
 
 ## Quick Start
 
-### 1) Install
+### 1. Create the AudioManager
 
-Import the package into your Unity project.
+```
+Assets/
+└── Audio/
+    ├── Music/
+    ├── Ambient/
+    └── SFX/
+```
 
-### 2) Add AudioManager
+1. Create a GameObject called `Audio` in your persistent scene.
+2. Add `AudioManager` — it will auto-require `SoundLibrary`, `MusicLibrary`, and `AmbientLibrary`.
+3. Create an `AudioMixer` with four **exposed parameters**: `MasterVolume`, `MusicVolume`, `AmbientVolume`, `FXVolume`. Create `Music`, `Ambient`, and `FX` groups. Assign everything to AudioManager in the Inspector.
 
-*   Drag the **AudioManager prefab** into your scene, **or**
-*   Create an empty GameObject and add `AudioManager` to it.
+### 2. Import your audio
 
-### 3) Organize audio files
+In the **AudioManager Inspector → Utilities**:
 
-Recommended structure:
+| Step | What it does |
+|---|---|
+| **Set Root Audio Folder** | Points the scanner at `Assets/Audio` |
+| **Scan** | Finds and classifies all `AudioClip` assets |
+| **Generate** | Creates `MusicTrack`, `AmbientTrack`, `SoundClipData` ScriptableObjects |
+| **Assign** | Populates all libraries and writes `AudioNames.cs` |
 
-*   `Assets/Audio/SFX`
-*   `Assets/Audio/Music`
-*   `Assets/Audio/Ambient`
-
-### 4) Auto-generate audio assets
-
-In **AudioManager → Utilities**:
-
-1.  **Set Root Audio Folder**
-2.  **Scan → Generate → Assign**
-
-This will:
-
-*   scan audio clips in the chosen folder,
-*   generate `SoundClipData`, `MusicTrack`, and `AmbientTrack` assets,
-*   assign them into their libraries automatically.
-
-### 5) Test quickly
-
-Use the **AudioManager custom inspector** runtime tools to:
-
-*   play SFX/Music
-*   preview clips
-*   set/push/pop ambient profiles
-*   switch mixer snapshots
-
-***
-
-## Ambient Workflow (Profiles + Zones + Emitters)
-
-### Step 1 — Place Ambient Emitters (3D locations)
-
-1.  Create a new GameObject in your scene: `River Emitter`
-2.  Add **AmbientEmitter** (new component).
-3.  Assign an `AmbientTrack` (e.g., `RiverLoop`).
-4.  Position it where the sound should originate.
-
-Repeat for multiple points (forest wind emitters, cave hum emitters, etc.).
-
-### Step 2 — Create Ambient Profiles (what should be active)
-
-Create `AmbientProfile` assets such as:
-
-*   **Forest Profile**
-	*   WindLoop (volume 0.7)
-	*   InsectsLoop (volume 0.5)
-*   **River Profile**
-	*   RiverLoop (volume 1.0)
-
-Profiles reference tracks via `AmbientLayer.track`.
-
-### Step 3 — Add Ambient Zones (when profiles activate)
-
-Add `AmbientZone` trigger volumes:
-
-*   On enter: push or replace profile
-*   On exit: pop or clear profile
-
-This enables overlapping ambience:
-
-*   Forest zone + Rain zone + River zone can stack, and the system plays the best subset within your configured ambient voice budget.
-
-***
-
-## Using AudioManager in Code
-
-### SFX
+### 3. Play sounds
 
 ```csharp
-using UnityEngine;
 using Snog.Audio;
+using Snog.Audio.Generated; // ← generated constants
 
-public class ExampleSfx : MonoBehaviour
+// ── SFX ──────────────────────────────────────────────────────────────
+AudioManager.Instance.PlaySfx2D(SoundNames.ButtonClick);
+AudioManager.Instance.PlaySfx3D(SoundNames.Explosion, transform.position);
+
+// ── Music ─────────────────────────────────────────────────────────────
+AudioManager.Instance.PlayMusic(MusicNames.MainTheme, fadeIn: 1f);
+AudioManager.Instance.CrossFadeMusic(MusicNames.CombatLoop, crossFadeDuration: 1.5f);
+AudioManager.Instance.StopMusic(fadeOut: 1f);
+
+// ── Volume & Snapshots ────────────────────────────────────────────────
+AudioManager.Instance.SetVolume(0.8f, AudioManager.AudioChannel.Master);
+AudioManager.Instance.TransitionToSnapshot("Combat", transitionTime: 0.5f);
+```
+
+### 4. Set up ambient zones
+
+1. Add `AmbientEmitter` to each ambient sound source in your scene. Assign an `AmbientTrack`.
+2. Create an `AmbientProfile` asset. Add layers referencing those tracks and set target volumes.
+3. Drop an `AmbientZone` onto a trigger collider in your level. Assign the profile.
+
+No code. The manager handles scoring, voice budgeting, and fading automatically.
+
+---
+
+## AudioNames.cs — Compile-Time Safety
+
+After running the import pipeline, `AudioNames.cs` is written to your audio root:
+
+```csharp
+// AUTO-GENERATED — re-run Assign to update. Do not edit manually.
+namespace Snog.Audio.Generated
 {
-    private void Start()
-    {
-        AudioManager.Instance.PlaySfx2D("ui_click");
-        AudioManager.Instance.PlaySfx3D("explosion", transform.position);
-    }
+    public static class SoundNames
+    {
+        public const string Footstep = "Footstep";
+        public const string Explosion = "Explosion";
+        public const string ButtonClick = "ButtonClick";
+    }
+
+    public static class MusicNames
+    {
+        public const string MainTheme = "MainTheme";
+        public const string CombatLoop = "CombatLoop";
+    }
+
+    public static class AmbientNames
+    {
+        public const string ForestWind = "ForestWind";
+        public const string CaveDrips = "CaveDrips";
+    }
 }
 ```
 
-### Music
+> ✅ Use these constants everywhere instead of raw strings.  
+> Rename a sound → re-run Assign → the compiler flags every broken call site immediately.
 
-```csharp
-using UnityEngine;
-using Snog.Audio;
+You can also regenerate the file independently at any time via **AudioManager Inspector → Utilities → Generate Names Class**.
 
-public class ExampleMusic : MonoBehaviour
-{
-    private void Start()
-    {
-        AudioManager.Instance.PlayMusic("MainTheme", 0f, 1.5f)
-    }
-    
-    public void Stop()
-    {
-        AudioManager.Instance.StopMusic(1.0f);
-    }
-}
+---
+
+## Ambient System Deep Dive
+
+<details open>
+<summary><strong>The four components</strong></summary>
+<br>
+
+| Component | Role |
+|---|---|
+| `AmbientTrack` | ScriptableObject — the clip data asset |
+| `AmbientEmitter` | MonoBehaviour — world-space source, self-registers globally with the manager |
+| `AmbientProfile` | ScriptableObject — soundscape definition: layers of (track + volume + priority) |
+| `AudioManager` | Conductor: scores emitters, applies voice budget, fades volumes |
+
+</details>
+
+<details open>
+<summary><strong>How scoring works</strong></summary>
+<br>
+
+Every `ambientRescoreInterval` seconds the manager:
+
+1. Builds a `desiredVolume` per track from all profiles currently on the stack
+2. Scores each registered `AmbientEmitter`:
+
+```
+score = (stackPriority × 1000) + (emitterPriority × 100) + (volume × 10) + (1 / distance)
 ```
 
-### Ambient (Replace mode)
+3. Selects the top `maxAmbientVoices` emitters
+4. Fades allowed emitters toward their target volumes; all others fade out
+
+Because emitters register globally (not per-zone), one riverside emitter can be heard across multiple overlapping zones without any extra setup.
+
+</details>
+
+<details open>
+<summary><strong>Profile stack</strong></summary>
+<br>
 
 ```csharp
-using UnityEngine;
-using Snog.Audio;
-using Snog.Audio.Layers;
+// Enter a cave — layers over the existing forest ambient
+int token = AudioManager.Instance.PushAmbientProfile(caveProfile, priority: 1, fade: 2f);
 
-public class ExampleAmbientReplace : MonoBehaviour
-{
-    [SerializeField] private AmbientProfile profile;
-
-    private void Start()
-    {
-        AudioManager.Instance.SetAmbientProfile(profile, 2f);
-    }
-
-    public void Clear()
-    {
-        AudioManager.Instance.ClearAmbient(2f);
-    }
-}
+// Leave the cave — forest ambient returns
+AudioManager.Instance.PopAmbientToken(token, fade: 2f);
 ```
 
-### Ambient (Stack mode)
+Profiles stack — pushing a cave profile over a forest profile blends both until the voice budget forces a cutoff. Higher-priority layers survive. `AmbientZone` in Stack mode handles push/pop automatically.
+
+</details>
+
+<details open>
+<summary><strong>AmbientZone exit actions</strong></summary>
+<br>
+
+| ExitAction | Replace mode | Stack mode |
+|---|---|---|
+| `None` | Profile stays active | Token stays on stack — **you must pop manually.** Editor shows a warning. |
+| `AutoPop` *(recommended)* | — | Pops token with exit fade. Best default for most zones. |
+| `StopFade` | `ClearAmbient(exitFade)` | Pops token with exit fade |
+| `StopImmediate` | `ClearAmbient(0)` | Pops token instantly |
+
+</details>
+
+---
+
+## Events & Callbacks
+
+All hooks are `UnityEvent` — wire them in the Inspector, or subscribe in code.
 
 ```csharp
-
-using UnityEngine;
-using Snog.Audio;
-using Snog.Audio.Layers;
-
-public class ExampleAmbientStack : MonoBehaviour
+AudioManager.Instance.onMusicFinished.AddListener(trackName =>
 {
-    [SerializeField] private AmbientProfile rainProfile;
-    private int token = -1;
-    
-    public void StartRain()
-    {
-        token = AudioManager.Instance.PushAmbientProfile(rainProfile, 5, 2f);
-    }
-    
-    public void StopRain()
-    {
-        if (token >= 0)
-        {
-            AudioManager.Instance.PopAmbientToken(token, 2f);
-            token = -1;
-        }
-    }
-}
+    Debug.Log($"Track finished: {trackName}");
+    ShowNextLevelUI();
+});
 ```
 
-***
+| Event | Signature | When it fires |
+|---|---|---|
+| `onMusicStarted` | `UnityEvent<string>` | A track begins playing |
+| `onMusicStopped` | `UnityEvent<string>` | Music is manually stopped |
+| `onMusicFinished` | `UnityEvent<string>` | A non-looping track reaches its natural end |
+| `onSfxPlayed` | `UnityEvent<string>` | A 2D or 3D SFX is successfully played |
+| `onAmbientProfilePushed` | `UnityEvent<AmbientProfile>` | A profile is pushed onto the stack |
+| `onAmbientProfilePopped` | `UnityEvent<AmbientProfile>` | A profile is popped from the stack |
 
-## Audio Mixer Setup
+`AmbientZone` also exposes `onZoneEntered` and `onZoneExited` for driving UI, animations, or other non-audio systems from the same trigger volume.
 
-To use volume controls and meters, your AudioMixer should expose these float parameters:
+---
 
-*   `MasterVolume`
-*   `MusicVolume`
-*   `AmbientVolume`
-*   `FXVolume`
+## Requirements
 
-Snapshots supported by default:
+| Requirement | Notes |
+|---|---|
+| **Unity 2022.3 LTS+** | Tested on 2022.3, 2023.1, 6000.0 |
+| **AudioMixer** | Required — manager routes to groups and writes to exposed parameters |
+| `FindAnyObjectByType<T>()` | Available from Unity 2023.1+. For 2022.3, replace the handful of call sites with `FindObjectOfType<T>()` |
 
-*   `Default`, `Combat`, `Stealth`, `Underwater`
+No third-party dependencies. No Package Manager entries. Import and go.
 
-If you use different names, update the manager’s parameter strings accordingly.
+---
 
-***
+## Project Structure
 
-## Troubleshooting / FAQ
+```
+Snog/
+├── AudioManager/
+│ ├── Scripts/
+│ │ ├── Runtime/
+│ │ │ ├── AudioManager.cs ← singleton hub (partial class)
+│ │ │ ├── AudioSourcePool.cs ← pooled 3D AudioSources
+│ │ │ ├── AudioTrigger.cs ← zero-code gameplay trigger
+│ │ │ ├── Clips/
+│ │ │ │ ├── SoundClipData.cs ← multi-variant SFX asset
+│ │ │ │ ├── MusicTrack.cs ← music track asset
+│ │ │ │ └── AmbientTrack.cs ← ambient track asset
+│ │ │ ├── Libraries/
+│ │ │ │ ├── SoundLibrary.cs
+│ │ │ │ ├── MusicLibrary.cs
+│ │ │ │ └── AmbientLibrary.cs
+│ │ │ └── Utils/
+│ │ │ ├── AmbientEmitter.cs ← world-space ambient source
+│ │ │ ├── AmbientProfile.cs ← includes AmbientLayer
+│ │ │ ├── AmbientZone.cs ← trigger volume
+│ │ │ └── AudioManagerAssetTools.Editor.cs ← import pipeline + AudioNames generator
+│ │ └── Editor/
+│ │ ├── AudioManagerEditor.cs ← runtime tools, meters, emitter browser
+│ │ └── AudioTriggerEditor.cs ← context-sensitive trigger inspector
+│ └── Demo/
+│ ├── Scripts/
+│ └── Documentation/
+└── Shared/
+    └── Singleton.cs ← thread-safe MonoBehaviour singleton base
+```
 
-### “I don’t hear 3D ambience”
+---
 
-Checklist:
+## Troubleshooting
 
-*   Did you place at least one **AmbientEmitter** in the scene and assign an `AmbientTrack`? *(new system)*
-*   Is an **AmbientProfile** currently active (via zone or code) referencing that same track name/asset?
-*   Is `maxAmbientVoices` high enough (e.g., 8–16) to allow that emitter to be selected?
+<details>
+<summary><strong>Volume sliders do nothing</strong></summary>
+<br>
 
-### “Scan → Generate → Assign didn’t create what I expected”
+Ensure your `AudioMixer` has exposed float parameters named **exactly**: `MasterVolume`, `MusicVolume`, `AmbientVolume`, `FXVolume`. Check that `mainMixer` is assigned in the AudioManager inspector.
 
-*   Make sure the folder you chose is inside `Assets/`.
-*   Naming/folder heuristics matter: “Music” folders or long clips will be treated as music; “Ambient” folders or medium-length loops treated as ambient; short clips treated as SFX.
+</details>
 
-### “Mixer meters show no movement / volumes don’t change”
+<details>
+<summary><strong>"No clips found" / empty dropdowns</strong></summary>
+<br>
 
-*   Confirm your AudioMixer exposes the correct parameters (`MasterVolume`, etc.).
+Run the pipeline: **Inspector → Utilities → Scan → Generate → Assign**. Or right-click each library component → "Rebuild Dictionary".
 
-### “I get no SFX or wrong SFX”
+</details>
 
-*   Ensure `SoundLibrary` contains `SoundClipData` assets with matching `soundName`.
+<details>
+<summary><strong>Sounds dropping in busy scenes</strong></summary>
+<br>
 
-***
+Check the console for `[AudioSourcePool] Pool exhausted` warnings — they're rate-limited so they won't flood the log. Increase `fxPoolSize` (base pool) or `maxExtraSources` (overflow budget) on AudioManager until warnings stop. You can also call `fxPool.GetPoolStats(out active, out available, out total)` to instrument this in a debug UI.
 
-##  Support
+</details>
 
-- For support, please contact [snogdev@gmail.com](mailto:snogdev@gmail.com)
+<details>
+<summary><strong>Ambient not playing</strong></summary>
+<br>
+
+Check in order:
+- Are there `AmbientEmitter` components in the scene? The inspector shows the count.
+- Does each emitter have an `AmbientTrack` with a clip assigned?
+- Is the ambient stack empty? The inspector shows the current stack depth.
+- Is the `AmbientZone` collider set to **Is Trigger**? Does the entering object's tag match `Tag To Compare`?
+
+</details>
+
+<details>
+<summary><strong>Ambient token leak — zone ambience never stops</strong></summary>
+<br>
+
+In Stack mode, `Exit Action = None` **intentionally** leaves the token on the stack for manual management. Change it to `AutoPop`. The Inspector shows a warning whenever `None` is selected in Stack mode.
+
+</details>
+
+<details>
+<summary><strong>Editor clip preview not working</strong></summary>
+<br>
+
+Preview uses reflection into Unity's internal `UnityEditor.AudioUtil`. This can break when Unity updates internal APIs — the `previewSupported` flag prevents crashes. Runtime playback is always unaffected.
+
+</details>
+
+<details>
+<summary><strong>Snapshots not transitioning</strong></summary>
+<br>
+
+The snapshot must exist in the `AudioMixer` **and** be added to AudioManager → Snapshots list with a unique name. The string passed to `TransitionToSnapshot()` must match the name field exactly (case-insensitive, whitespace is trimmed automatically).
+
+</details>
+
+---
+
+## FAQ
+
+<details>
+<summary><strong>Does this require an AudioMixer?</strong></summary>
+<br>
+
+Yes. `AudioManager` routes all sources to `AudioMixerGroup` references and writes dB values to exposed mixer parameters for volume control. An `AudioMixer` is also required for snapshot transitions.
+
+</details>
+
+<details>
+<summary><strong>Can I use this without running the import pipeline?</strong></summary>
+<br>
+
+Yes — create `SoundClipData`, `MusicTrack`, and `AmbientTrack` ScriptableObjects manually and assign them to the library lists on AudioManager. The pipeline automates this and generates `AudioNames.cs`, but everything works without it.
+
+</details>
+
+<details>
+<summary><strong>CrossFadeMusic vs StopMusic + PlayMusic — what's the difference?</strong></summary>
+<br>
+
+`StopMusic` → `PlayMusic` creates a silent gap unless you perfectly sequence the fade durations yourself. `CrossFadeMusic` runs both fades simultaneously on two internal `AudioSource` components — no gap, no timing math required. Use `CrossFadeMusic` for in-game transitions; `StopMusic` + `PlayMusic` is fine when a deliberate silence is intentional (e.g. a menu-to-gameplay cut).
+
+</details>
+
+<details>
+<summary><strong>Can I layer multiple ambient soundscapes?</strong></summary>
+<br>
+
+Yes — `PushAmbientProfile` stacks profiles. The manager merges desired volumes (max wins per track) and distributes the voice budget across all active layers. `AmbientZone` in Stack mode handles push/pop automatically based on the player's position.
+
+</details>
+
+<details>
+<summary><strong>How do I respond to a music track finishing?</strong></summary>
+<br>
+
+Subscribe to `AudioManager.Instance.onMusicFinished` (`UnityEvent<string>`). It fires when a **non-looping** track reaches its natural end. For manual stops, `onMusicStopped` fires instead. Both can be wired in the Inspector with no code.
+
+</details>
+
+<details>
+<summary><strong>Can I have multiple emitters for the same ambient track?</strong></summary>
+<br>
+
+Yes — enable `allowMultipleEmittersPerTrack` on AudioManager. The voice budgeting system scores each one independently and keeps the closest / highest-priority ones playing. Disable it to enforce a strict one-emitter-per-track rule.
+
+</details>
+
+---
+
+<div align="center">
+
+---
+
+Made with ♥ by **Snog / Pedro Schenegoski**
+
+[![Email](https://img.shields.io/badge/snogdev%40gmail.com-EA4335?style=flat-square&logo=gmail&logoColor=white)](mailto:snogdev@gmail.com)
+
+*If Snog saves you time on a project, a review on the Asset Store makes a real difference — thank you.*
+
+</div>
