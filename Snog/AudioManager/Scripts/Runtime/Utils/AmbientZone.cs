@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 using Snog.Audio.Attribute;
 
@@ -15,23 +16,40 @@ namespace Snog.Audio.Utils
             Stack
         }
 
+        // Fix 9: Old `None` in Stack mode popped the token immediately — contradicting its name.
+        // The enum is now split into self-documenting values:
+        //   None        = truly do nothing. In Stack mode this intentionally leaves the token
+        //                 on the stack (the developer is responsible for popping it later).
+        //                 Use this if you want the ambient to persist until a manual Pop call.
+        //   AutoPop     = Stack mode only: pop the token with the exit fade. Replaces the old
+        //                 `None` behaviour in Stack mode (most developers want this).
+        //   StopFade    = Replace: ClearAmbient with fade. Stack: pop with exit fade.
+        //   StopImmediate = Replace: ClearAmbient instantly. Stack: pop instantly.
         public enum ExitAction
         {
             /// <summary>
-            /// Replace mode: do nothing.
-            /// Stack mode: token will still be popped immediately (so the zone doesn't leak).
+            /// Replace mode: do nothing — the current profile stays active.
+            /// Stack mode: do nothing — the token remains on the stack. You are responsible
+            /// for popping it manually (e.g. via AudioManager.PopAmbientToken).
             /// </summary>
             None,
 
             /// <summary>
-            /// Replace mode: ClearAmbient with fade.
-            /// Stack mode: Pop token with fade.
+            /// Stack mode only: automatically pop the zone's token when the player exits,
+            /// using the exit fade duration. This is the recommended default for Stack mode.
+            /// (Has no special meaning in Replace mode — use StopFade or StopImmediate there.)
+            /// </summary>
+            AutoPop,
+
+            /// <summary>
+            /// Replace mode: ClearAmbient with exit fade.
+            /// Stack mode: pop the token with exit fade.
             /// </summary>
             StopFade,
 
             /// <summary>
             /// Replace mode: ClearAmbient instantly.
-            /// Stack mode: Pop token instantly.
+            /// Stack mode: pop the token instantly.
             /// </summary>
             StopImmediate
         }
@@ -51,27 +69,20 @@ namespace Snog.Audio.Utils
 
         [Header("Enter Behavior")]
         [SerializeField] private bool fadeOnEnter = true;
-
         [SerializeField] private float enterFadeDuration = 2f;
 
         [Header("Exit Behavior")]
-        [Tooltip(
-            "Replace mode:\n" +
-            " None - do nothing\n" +
-            " StopFade - ClearAmbient with exit fade\n" +
-            " StopImmediate - ClearAmbient instantly\n\n" +
-            "Stack mode:\n" +
-            " None - Pop token instantly (cleanup)\n" +
-            " StopFade - Pop token with exit fade\n" +
-            " StopImmediate - Pop token instantly"
-        )]
-        [SerializeField] private ExitAction exitAction = ExitAction.None;
-
+        [SerializeField] private ExitAction exitAction = ExitAction.AutoPop;
         [SerializeField] private float exitFadeDuration = 2f;
+
+        [Header("Events")]
+        [Tooltip("Fired when the first qualifying collider enters this zone.")]
+        public UnityEvent onZoneEntered;
+        [Tooltip("Fired when the last qualifying collider leaves this zone.")]
+        public UnityEvent onZoneExited;
 
         [Header("Gizmos")]
         [SerializeField] private Color gizmoColor = new(0.2f, 0.7f, 0.4f, 0.25f);
-
         [SerializeField] private Color gizmoWireColor = new(0.2f, 0.7f, 0.4f, 1f);
 
         private readonly HashSet<Collider> inside = new HashSet<Collider>();
@@ -80,10 +91,7 @@ namespace Snog.Audio.Utils
         private void Reset()
         {
             var c = GetComponent<Collider>();
-            if (c != null)
-            {
-                c.isTrigger = true;
-            }
+            if (c != null) c.isTrigger = true;
         }
 
 #if UNITY_EDITOR
@@ -91,31 +99,28 @@ namespace Snog.Audio.Utils
         {
             var c = GetComponent<Collider>();
             if (c != null && !c.isTrigger)
-            {
                 c.isTrigger = true;
-            }
 
             enterFadeDuration = Mathf.Max(0f, enterFadeDuration);
             exitFadeDuration = Mathf.Max(0f, exitFadeDuration);
+
+            // Warn developer if None in Stack mode — likely unintentional token leak.
+            if (mode == ZoneMode.Stack && exitAction == ExitAction.None)
+            {
+                Debug.LogWarning(
+                    $"[AmbientZone] '{name}': ExitAction.None in Stack mode means the ambient token " +
+                    "will NEVER be automatically cleaned up. If this is intentional, ignore this warning. " +
+                    "Otherwise, change Exit Action to AutoPop.",
+                    this);
+            }
         }
 #endif
 
         private void OnTriggerEnter(Collider other)
         {
-            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare))
-            {
-                return;
-            }
-
-            if (!inside.Add(other))
-            {
-                return;
-            }
-
-            if (inside.Count > 1)
-            {
-                return;
-            }
+            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare)) return;
+            if (!inside.Add(other)) return;
+            if (inside.Count > 1) return;
 
             var manager = AudioManager.Instance;
             if (manager == null)
@@ -144,52 +149,33 @@ namespace Snog.Audio.Utils
                         manager.PopAmbientToken(ambientToken, 0f);
                         ambientToken = -1;
                     }
-
                     ambientToken = manager.PushAmbientProfile(profile, stackPriority, fade);
                     break;
             }
+
+            onZoneEntered?.Invoke();
         }
 
         private void OnTriggerExit(Collider other)
         {
-            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare))
-            {
-                return;
-            }
-
-            if (!inside.Remove(other))
-            {
-                return;
-            }
-
-            if (inside.Count > 0)
-            {
-                return;
-            }
+            if (!string.IsNullOrEmpty(tagToCompare) && !other.CompareTag(tagToCompare)) return;
+            if (!inside.Remove(other)) return;
+            if (inside.Count > 0) return;
 
             var manager = AudioManager.Instance;
-            if (manager == null)
-            {
-                return;
-            }
+            if (manager == null) return;
 
             HandleExit(manager, exitAction);
+            onZoneExited?.Invoke();
         }
 
         private void OnDisable()
         {
-            if (inside.Count == 0)
-            {
-                return;
-            }
-
+            if (inside.Count == 0) return;
             inside.Clear();
 
             var manager = AudioManager.Instance;
-            if (manager == null)
-            {
-                return;
-            }
+            if (manager == null) return;
 
             HandleExit(manager, ExitAction.StopImmediate);
         }
@@ -204,7 +190,8 @@ namespace Snog.Audio.Utils
                     switch (action)
                     {
                         case ExitAction.None:
-                            break;
+                        case ExitAction.AutoPop:
+                            break; // AutoPop is Stack-mode concept; in Replace mode, do nothing.
 
                         case ExitAction.StopFade:
                             manager.ClearAmbient(fade);
@@ -217,27 +204,25 @@ namespace Snog.Audio.Utils
                     break;
 
                 case ZoneMode.Stack:
-                    if (ambientToken < 0)
-                    {
-                        break;
-                    }
+                    if (ambientToken < 0) break;
 
                     switch (action)
                     {
                         case ExitAction.None:
-                            manager.PopAmbientToken(ambientToken, 0f);
+                            // Intentionally left on stack. Developer must pop manually.
                             break;
 
+                        case ExitAction.AutoPop:
                         case ExitAction.StopFade:
                             manager.PopAmbientToken(ambientToken, fade);
+                            ambientToken = -1;
                             break;
 
                         case ExitAction.StopImmediate:
                             manager.PopAmbientToken(ambientToken, 0f);
+                            ambientToken = -1;
                             break;
                     }
-
-                    ambientToken = -1;
                     break;
             }
         }
@@ -245,9 +230,7 @@ namespace Snog.Audio.Utils
         private float GetEnterFade()
         {
             if (profile != null && profile.defaultFade > 0f)
-            {
                 return profile.defaultFade;
-            }
 
             return Mathf.Max(0f, enterFadeDuration);
         }

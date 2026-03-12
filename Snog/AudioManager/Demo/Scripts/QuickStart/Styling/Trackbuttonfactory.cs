@@ -12,9 +12,11 @@ namespace Snog.Audio.Demo
     ///
     /// Each button has:
     ///   • Dark background panel with a subtle left-edge accent bar
-    ///   • Music note icon  |  Track name  |  Play/Stop state indicator
+    ///   • Icon  |  Track name  |  Play/Stop state indicator
     ///   • Smooth hover + active colour transitions via EventTrigger
     ///   • Purple glow border that brightens when the track is active
+    ///
+    /// Used by all three tabs (Music "♪", SFX "▶", Ambient "≋").
     /// </summary>
     public static class TrackButtonFactory
     {
@@ -31,7 +33,6 @@ namespace Snog.Audio.Demo
         internal static float ButtonHeight = 36f; // set by AudioManagerDemoUI before building
         private const float ACCENT_BAR_W   =  3f;
         private const float ICON_SIZE       = 24f;
-        private const float ANIM_SPEED      = 8f;
 
         // ─────────────────────────────────────────────────────────────────────
         //  Public factory method
@@ -40,16 +41,21 @@ namespace Snog.Audio.Demo
         /// <summary>
         /// Creates a styled track button and parents it to <paramref name="container"/>.
         /// </summary>
-        /// <param name="trackName">Raw track name from MusicLibrary.</param>
+        /// <param name="trackName">Raw track/sound/profile name used as the button ID.</param>
         /// <param name="displayName">Human-readable label shown on the button.</param>
         /// <param name="container">Parent RectTransform (Track List panel).</param>
         /// <param name="onClick">Callback invoked when the button is pressed.</param>
+        /// <param name="iconChar">
+        ///   Unicode character shown as the left icon.
+        ///   Use "♪" for music, "▶" for SFX, "≋" for ambient. Defaults to "♪".
+        /// </param>
         /// <returns>The <see cref="TrackButtonController"/> attached to the new button.</returns>
         public static TrackButtonController Create(
             string trackName,
             string displayName,
             Transform container,
-            Action<string> onClick)
+            Action<string> onClick,
+            string iconChar = "♪")
         {
             // ── Root ──────────────────────────────────────────────────────────
             GameObject root = new GameObject($"TrackBtn_{trackName}");
@@ -111,7 +117,7 @@ namespace Snog.Audio.Demo
             divImg.color = DividerColor;
             divImg.raycastTarget = false;
 
-            // ── Icon (music note ♪) ───────────────────────────────────────────
+            // ── Icon ──────────────────────────────────────────────────────────
             GameObject iconGO = new GameObject("Icon");
             iconGO.transform.SetParent(root.transform, false);
 
@@ -123,7 +129,7 @@ namespace Snog.Audio.Demo
             iconRect.anchoredPosition = new Vector2(ACCENT_BAR_W + 10f, 0f);
 
             TMP_Text iconText = iconGO.AddComponent<TextMeshProUGUI>();
-            iconText.text      = "♪";
+            iconText.text      = iconChar;
             iconText.fontSize  = 16f;
             iconText.color     = AccentIdle;
             iconText.alignment = TextAlignmentOptions.Center;
@@ -149,7 +155,7 @@ namespace Snog.Audio.Demo
             label.maxVisibleLines    = 1;
             label.raycastTarget      = false;
 
-            // ── Status indicator (PLAY / STOP) ───────────────────────────────────
+            // ── Status indicator (PLAY / STOP) ────────────────────────────────
             GameObject statusGO = new GameObject("Status");
             statusGO.transform.SetParent(root.transform, false);
 

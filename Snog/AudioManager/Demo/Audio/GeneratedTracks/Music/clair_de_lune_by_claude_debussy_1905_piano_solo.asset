@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8fb8da8af8845c74599564f37329546a, type: 3}
+  m_Name: clair_de_lune_by_claude_debussy_1905_piano_solo
+  m_EditorClassIdentifier: Assembly-CSharp::Snog.Audio.Clips.MusicTrack
+  trackName: Clair_de_Lune_by_Claude_Debussy_1905_piano_solo
+  moodTag: 
+  clip: {fileID: 8300000, guid: 91f782ee9e6611844adb9de33539bdff, type: 3}
+  loop: 1
+  defaultVolume: 1
+  description: Generated from Assets/Snog/AudioManager/Demo/Audio/Music/Clair_de_Lune_by_Claude_Debussy_(1905,_piano_solo)
+    (online-audio-converter.com).mp3

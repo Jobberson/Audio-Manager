@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.Audio;
 using Snog.Audio.Clips;
@@ -20,7 +19,6 @@ namespace Snog.Audio.Utils
         [Header("3D Settings")]
         [Range(0f, 1f)]
         [SerializeField] private float spatialBlend = 1f;
-
         [SerializeField] private float minDistance = 1f;
         [SerializeField] private float maxDistance = 30f;
 
@@ -35,7 +33,6 @@ namespace Snog.Audio.Utils
 
         public AmbientTrack Track => track;
         public int EmitterPriority => emitterPriority;
-
         public float CurrentVolume01 => currentVolume01;
         public bool IsPlaying => source != null && source.isPlaying;
 
@@ -51,17 +48,13 @@ namespace Snog.Audio.Utils
         private void OnEnable()
         {
             if (AudioManager.Instance != null)
-            {
                 AudioManager.Instance.RegisterEmitter(this);
-            }
         }
 
         private void OnDisable()
         {
             if (AudioManager.Instance != null)
-            {
                 AudioManager.Instance.UnregisterEmitter(this);
-            }
         }
 
         private void ApplyStaticSettings()
@@ -85,7 +78,20 @@ namespace Snog.Audio.Utils
             if (pitchRange.y <= 0f) pitchRange.y = 0.01f;
         }
 
+        /// <summary>
+        /// Ensures this emitter is playing. Uses the emitter's own playback settings by default.
+        /// </summary>
         public void EnsurePlaying(AudioMixerGroup outputGroup)
+            => EnsurePlaying(outputGroup, useRandomStart: null, overridePitchRange: null);
+
+        /// <summary>
+        /// Ensures this emitter is playing, optionally overriding its own playback settings.
+        /// Called with non-null values when a winning AmbientLayer has overridePlayback enabled.
+        /// </summary>
+        /// <param name="outputGroup">Mixer group to route output through.</param>
+        /// <param name="useRandomStart">When non-null, overrides the emitter's randomStartTime setting.</param>
+        /// <param name="overridePitchRange">When non-null, overrides the emitter's pitchRange setting.</param>
+        public void EnsurePlaying(AudioMixerGroup outputGroup, bool? useRandomStart, Vector2? overridePitchRange)
         {
             if (source == null) return;
 
@@ -98,37 +104,29 @@ namespace Snog.Audio.Utils
             source.outputAudioMixerGroup = outputGroup;
 
             if (source.clip != track.clip)
-            {
                 source.clip = track.clip;
-            }
 
             source.loop = loop;
             source.spatialBlend = Mathf.Clamp01(spatialBlend);
 
             if (!source.isPlaying)
             {
-                if (randomStartTime && source.clip != null && source.clip.length > 0f)
-                {
-                    source.time = Random.Range(0f, source.clip.length);
-                }
+                // Resolve which settings to use: layer override wins when provided.
+                bool doRandomStart = useRandomStart ?? randomStartTime;
+                Vector2 resolvedPitch = overridePitchRange ?? pitchRange;
 
-                if (pitchRange.x != pitchRange.y)
-                {
-                    source.pitch = Random.Range(pitchRange.x, pitchRange.y);
-                }
-                else
-                {
-                    source.pitch = pitchRange.x;
-                }
+                if (doRandomStart && source.clip != null && source.clip.length > 0f)
+                    source.time = Random.Range(0f, source.clip.length);
+
+                source.pitch = resolvedPitch.x != resolvedPitch.y
+                    ? Random.Range(resolvedPitch.x, resolvedPitch.y)
+                    : resolvedPitch.x;
 
                 source.Play();
             }
         }
 
-        public void SetTargetVolume01(float v01)
-        {
-            targetVolume01 = Mathf.Clamp01(v01);
-        }
+        public void SetTargetVolume01(float v01) => targetVolume01 = Mathf.Clamp01(v01);
 
         public void StepVolume(float dt, float fadeSeconds, float globalGain)
         {
@@ -142,9 +140,7 @@ namespace Snog.Audio.Utils
                 if (currentVolume01 <= 0.0001f && targetVolume01 <= 0.0001f)
                 {
                     if (source.isPlaying)
-                    {
                         source.Stop();
-                    }
                 }
             }
         }
@@ -157,10 +153,7 @@ namespace Snog.Audio.Utils
             if (source != null)
             {
                 source.volume = 0f;
-                if (source.isPlaying)
-                {
-                    source.Stop();
-                }
+                if (source.isPlaying) source.Stop();
             }
         }
     }

@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Snog.Audio.Clips.MusicTrack
   trackName: bach1
   moodTag: 
-  clip: {fileID: 8300000, guid: b4b77a17133f14342b8933f7ea66c688, type: 3}
+  clip: {fileID: 8300000, guid: 290d2070a3ca80449b188fc1096e156b, type: 3}
   loop: 1
   defaultVolume: 1
   description: Generated from Assets/Snog/AudioManager/Demo/Audio/Music/bach1.mp3
