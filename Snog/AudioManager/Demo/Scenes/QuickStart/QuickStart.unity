@@ -668,6 +668,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: -7675189290212446230, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
+      propertyPath: fxVolume
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: mainMixer
       value: 
       objectReference: {fileID: 24100000, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
@@ -676,9 +680,21 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 3716564208458188655, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
+      propertyPath: musicVolume
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: ambientGroup
       value: 
       objectReference: {fileID: -6087668797086664871, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
+    - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
+      propertyPath: masterVolume
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
+      propertyPath: ambientVolume
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: audioFolderPath
       value: Assets/Snog/AudioManager/Demo/Audio
@@ -697,19 +713,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[0].name
-      value: Default1
+      value: Default
       objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[1].name
-      value: Default2
+      value: Combat
       objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[2].name
-      value: Default3
+      value: Exploration
       objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[3].name
-      value: Default4
+      value: Underwater
       objectReference: {fileID: 0}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: 'scannedSFXClips.Array.data[0]'
@@ -738,15 +754,15 @@ PrefabInstance:
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[1].snapshot
       value: 
-      objectReference: {fileID: -231142517174944981, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
+      objectReference: {fileID: -4992693373607299027, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[2].snapshot
       value: 
-      objectReference: {fileID: 4597010888128464052, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
+      objectReference: {fileID: 5682454358231111613, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: snapshots.Array.data[3].snapshot
       value: 
-      objectReference: {fileID: 5630404377942174301, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
+      objectReference: {fileID: -2645176031955885895, guid: 7234d0a691a2090469f3f113ae2af83f, type: 2}
     - target: {fileID: 3820325710981127710, guid: 4b45668d0d53b42468fef5e14790f83b, type: 3}
       propertyPath: 'scannedAmbientClips.Array.data[0]'
       value: 

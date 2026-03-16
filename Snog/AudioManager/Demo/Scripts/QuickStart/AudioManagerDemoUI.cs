@@ -8,6 +8,7 @@ using TMPro;
 using Snog.Audio.Clips;
 using Snog.Audio.Libraries;
 using Snog.Audio.Utils;
+using Snog.Audio.Generated;
 
 namespace Snog.Audio.Demo
 {

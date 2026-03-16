@@ -21,7 +21,6 @@ namespace Snog.Audio
         [SerializeField] private List<AudioClip> scannedAmbientClips = new();
         [SerializeField] private List<AudioClip> scannedSFXClips     = new();
 
-        private const float SFX_MAX_LENGTH     = 30f;
         private const float AMBIENT_MIN_LENGTH = 30f;
         private const float MUSIC_MIN_LENGTH   = 60f;
 
@@ -353,18 +352,13 @@ namespace Snog.Audio
 
         // ─── Fix 2: Compile-Time Constants Generator ─────────────────────────
         /// <summary>
-        /// Generates a static C# constants class (AudioNames.cs) alongside the GeneratedTracks folder.
+        /// Generates a static C# constants class (AudioNames.cs) inside the Scripts folder
+        /// of this package, wherever the user has moved it.
         /// Developers can then use <c>AudioNames.Sound.Footstep</c> instead of raw strings,
         /// giving them autocomplete, rename support, and compile-time safety.
         /// </summary>
         public void GenerateNamesClass()
         {
-            if (string.IsNullOrEmpty(audioFolderPath))
-            {
-                Debug.LogWarning("[AudioManager] audioFolderPath not set. Cannot generate AudioNames.cs.", this);
-                return;
-            }
-
             var musicLib   = GetComponent<MusicLibrary>();
             var ambientLib = GetComponent<AmbientLibrary>();
             var sfxLib     = GetComponent<SoundLibrary>();
@@ -411,17 +405,72 @@ namespace Snog.Audio
 
             sb.AppendLine("}");
 
-            // Write to <audioFolderPath>/AudioNames.cs (outside GeneratedTracks so it's easy to find)
-            string csPath      = audioFolderPath.TrimEnd('/') + "/AudioNames.cs";
-            string fullOsPath  = Path.Combine(Application.dataPath.Replace("Assets", ""), csPath);
+            // Locate the Scripts folder relative to this script file — works regardless of
+            // where the user has moved the AudioManager package inside their project.
+            string csPath = FindScriptsFolderPath();
+            if (string.IsNullOrEmpty(csPath))
+            {
+                Debug.LogError(
+                    "[AudioManager] Could not locate the Scripts folder. " +
+                    "Make sure AudioManagerAssetTools_Editor.cs is inside a folder named 'Scripts'.",
+                    this);
+                return;
+            }
+
+            csPath = csPath.TrimEnd('/') + "/Runtime/AudioNames.cs";
+            string fullOsPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", csPath));
 
             File.WriteAllText(fullOsPath, sb.ToString(), Encoding.UTF8);
-            AssetDatabase.Refresh();
+            AssetDatabase.ImportAsset(csPath, ImportAssetOptions.ForceUpdate);
 
             Debug.Log(
                 $"[AudioManager] AudioNames.cs written to {csPath} " +
                 $"({soundNames.Length} sounds, {musicNames.Length} music, {ambientNames.Length} ambient).",
                 this);
+        }
+
+        /// <summary>
+        /// Returns the Unity project-relative path (e.g. "Assets/Snog/AudioManager/Scripts")
+        /// of the Scripts folder that contains this script file, no matter where the user
+        /// has placed or renamed the parent folders.
+        ///
+        /// Strategy: locate this source file via MonoScript, then walk up the directory
+        /// hierarchy until a folder named "Scripts" is found as a path component.
+        /// </summary>
+        private string FindScriptsFolderPath()
+        {
+            // MonoScript gives us the asset path of this exact .cs file.
+            var mono = MonoScript.FromMonoBehaviour(this);
+            if (mono == null)
+            {
+                Debug.LogWarning("[AudioManager] MonoScript.FromMonoBehaviour returned null.", this);
+                return null;
+            }
+
+            string scriptAssetPath = AssetDatabase.GetAssetPath(mono)
+                .Replace("\\", "/");
+
+            // Walk up the directory chain looking for a segment named "Scripts".
+            string dir = Path.GetDirectoryName(scriptAssetPath)?.Replace("\\", "/");
+
+            while (!string.IsNullOrEmpty(dir) && dir != "." && dir != "Assets")
+            {
+                string folderName = Path.GetFileName(dir);
+
+                if (string.Equals(folderName, "Scripts", StringComparison.OrdinalIgnoreCase))
+                    return dir; // e.g. "Assets/Snog/AudioManager/Scripts"
+
+                dir = Path.GetDirectoryName(dir)?.Replace("\\", "/");
+            }
+
+            // Fallback: the script isn't inside a "Scripts" folder — use its own directory.
+            Debug.LogWarning(
+                "[AudioManager] No 'Scripts' folder found in the path hierarchy. " +
+                $"Falling back to the script's own directory: " +
+                $"{Path.GetDirectoryName(scriptAssetPath)}",
+                this);
+
+            return Path.GetDirectoryName(scriptAssetPath)?.Replace("\\", "/");
         }
 
         #endregion

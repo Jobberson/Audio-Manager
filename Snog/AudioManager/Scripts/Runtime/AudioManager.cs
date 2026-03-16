@@ -25,8 +25,6 @@ namespace Snog.Audio
         private const float SCORE_WEIGHT_PRIORITY = 1000f;
         private const float SCORE_WEIGHT_EMITTER  = 100f;
         private const float SCORE_WEIGHT_VOLUME   = 10f;
-        private const float SCORE_WEIGHT_DISTANCE = 1f;
-        private const float VOLUME_EPSILON        = 0.0001f;
 
         #region Types
 
@@ -214,11 +212,17 @@ namespace Snog.Audio
             StartAmbientLoopIfNeeded();
         }
 
+        private void Start()
+        {
+            ApplyAllMixerVolumes();
+        }
+
 #if UNITY_EDITOR
         private void OnValidate()
         {
             GetLibraries();
             BuildSnapshotLookup();
+            ApplyAllMixerVolumes();
         }
 #endif
 

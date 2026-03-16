@@ -1,0 +1,17 @@
+{
+    "name": "SnogAudioManagerEditor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:9f2439fa59f40f6419cf1247b9a12bca",
+        "GUID:e9a3e4f0464fc1e46bfd4dde50f4f92a"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
